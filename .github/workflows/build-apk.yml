@@ -1,0 +1,88 @@
+name: build-telegram-fork
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Нужен x86-64: Android SDK и NDK не собираются под ARM.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout upstream with submodules
+        uses: actions/checkout@v4
+        with:
+          repository: DrKLO/Telegram
+          ref: master
+          submodules: recursive
+          fetch-depth: 1
+          path: telegram
+
+      - name: Apply fork patch
+        working-directory: telegram
+        run: git apply --whitespace=nowarn ../fork.patch
+
+      - name: Write gradle.properties overrides
+        # Задаётся отдельным шагом, а не патчем: так не ломается,
+        # когда upstream меняет свой gradle.properties.
+        working-directory: telegram
+        run: |
+          cat >> gradle.properties <<'EOF'
+
+          # Форк ставится рядом с официальным Telegram, а не поверх него.
+          APP_PACKAGE=org.telegram.messenger.fork
+          APP_VERSION_NAME=12.10.5-fork
+
+          # Ключ из репозитория Telegram: storePassword/keyPassword=android, alias=androidkey
+          RELEASE_STORE_PASSWORD=android
+          RELEASE_KEY_ALIAS=androidkey
+          RELEASE_KEY_PASSWORD=android
+
+          # Штатный -Xmx10248m из шаблона не влезает в раннер.
+          org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=640m -Dfile.encoding=UTF-8
+          org.gradle.parallel=false
+          org.gradle.workers.max=2
+          org.gradle.caching=true
+          EOF
+
+      - name: Free runner disk
+        run: |
+          # Ра��неру нужно ~40 ГБ, на раннерере свободно ~14 ГБ.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /usr/share/swift /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" \
+                    "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          yes | sdkmanager --licenses
+
+      - name: Build
+        working-directory: telegram
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+        run: |
+          ./gradlew --no-daemon :TMessagesProj_App:assembleAfatRelease
+
+      - name: Verify APK
+        run: |
+          APK=$(find telegram -name "*.apk" -path "*afat*" | head -1)
+          echo "APK: $APK"
+          ls -lh "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2" dump packagename "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-fork-apk
+          path: |
+            telegram/TMessagesProj_App/build/outputs/apk/afat/release/*.apk
+          if-no-files-found: error
