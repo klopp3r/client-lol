@@ -54,6 +54,29 @@ jobs:
           org.gradle.caching=true
           EOF
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle
+            telegram/.gradle
+          key: gradle-${{ runner.os }}-1
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Register fork package in google-services.json
+        # Плагин google-services требует клиента под текущий applicationId.
+        # Без него падает :TMessagesProj_App:processAfatReleaseGoogleServices
+        # с "No matching client found for package name".
+        working-directory: telegram
+        run: |
+          jq '.client += [(.client[0]
+            | .client_info.mobilesdk_app_id = "1:760348033671:android:f0f00f00f00f00f0"
+            | .client_info.android_client_info.package_name = "org.telegram.messenger.fork")]' \
+            TMessagesProj_App/google-services.json > gs.json
+          mv gs.json TMessagesProj_App/google-services.json
+          echo "клиентов в google-services.json: $(jq '.client | length' TMessagesProj_App/google-services.json)"
+          jq -r '.client[].client_info.android_client_info.package_name' TMessagesProj_App/google-services.json
+
       - name: Free runner disk
         # НЕ удаляем /usr/local/lib/android: там живут cmdline-tools,
         # без них sdkmanager не находится и сборка падает с exit 127.
