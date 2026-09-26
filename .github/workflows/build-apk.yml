@@ -13,14 +13,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DrKLO/Telegram
-          ref: master
+          # Закреплённый коммит: патч ниже собран под него и не должен
+          # отвалиться, когда upstream уедет вперёд.
+          ref: dc780e81ed1261c369c27870e8e0999a1eb0b600
           submodules: recursive
           fetch-depth: 1
           path: telegram
 
       - name: Apply fork patch
+        # Патч в base64: heredoc внутри YAML ломает hunk-заголовки,
+        # а checkout тянет только upstream, так что ../fork.patch не существует.
         working-directory: telegram
-        run: git apply --whitespace=nowarn ../fork.patch
+        run: |
+          echo 'ZGlmZiAtLWdpdCBhL1RNZXNzYWdlc1Byb2ovYnVpbGQuZ3JhZGxlIGIvVE1lc3NhZ2VzUHJvai9idWlsZC5ncmFkbGUKaW5kZXggODVhOWY4NC4uZjczZGJjYyAxMDA2NDQKLS0tIGEvVE1lc3NhZ2VzUHJvai9idWlsZC5ncmFkbGUKKysrIGIvVE1lc3NhZ2VzUHJvai9idWlsZC5ncmFkbGUKQEAgLTExNyw2ICsxMTcsMTEgQEAgYW5kcm9pZCB7CiAgICAgYnVpbGRUb29sc1ZlcnNpb24gJzM2LjAuMCcKICAgICBuZGtWZXJzaW9uICIyNy4yLjEyNDc5MDE4IgogCisgICAgLy8gQUdQIDguMTMg0YLRgNC10LHRg9C10YIg0Y/QstC90L7Qs9C+IG9wdC1pbiwg0LAg0LIg0Y3RgtC+0Lwg0LzQvtC00YPQu9C1INCx0LvQvtC60LAg0L3QtSDQsdGL0LvQvi4KKyAgICBidWlsZEZlYXR1cmVzIHsKKyAgICAgICAgYnVpbGRDb25maWcgPSB0cnVlCisgICAgfQorCiAgICAgc291cmNlU2V0cy5tYWluLmpuaUxpYnMuc3JjRGlycyA9IFsnLi9qbmkvJ10KIAogICAgIGV4dGVybmFsTmF0aXZlQnVpbGQgewpkaWZmIC0tZ2l0IGEvVE1lc3NhZ2VzUHJval9BcHAvYnVpbGQuZ3JhZGxlIGIvVE1lc3NhZ2VzUHJval9BcHAvYnVpbGQuZ3JhZGxlCmluZGV4IGVhN2E4NTMuLjliZDE2MDggMTAwNjQ0Ci0tLSBhL1RNZXNzYWdlc1Byb2pfQXBwL2J1aWxkLmdyYWRsZQorKysgYi9UTWVzc2FnZXNQcm9qX0FwcC9idWlsZC5ncmFkbGUKQEAgLTExNyw3ICsxMTcsNyBAQCBhbmRyb2lkIHsKICAgICBwcm9kdWN0Rmxhdm9ycyB7CiAgICAgICAgIGJ1bmRsZUFmYXQgewogICAgICAgICAgICAgbmRrIHsKLSAgICAgICAgICAgICAgICBhYmlGaWx0ZXJzICJhcm1lYWJpLXY3YSIsICJhcm02NC12OGEiLCAieDg2IiwgIng4Nl82NCIKKyAgICAgICAgICAgICAgICBhYmlGaWx0ZXJzICJhcm02NC12OGEiCiAgICAgICAgICAgICB9CiAgICAgICAgICAgICBleHQgewogICAgICAgICAgICAgICAgIGFiaVZlcnNpb25Db2RlID0gMQpAQCAtMTI2LDcgKzEyNiw3IEBAIGFuZHJvaWQgewogICAgICAgICB9CiAgICAgICAgIGJ1bmRsZUFmYXRfU0RLMjMgewogICAgICAgICAgICAgbmRrIHsKLSAgICAgICAgICAgICAgICBhYmlGaWx0ZXJzICJhcm1lYWJpLXY3YSIsICJhcm02NC12OGEiLCAieDg2IiwgIng4Nl82NCIKKyAgICAgICAgICAgICAgICBhYmlGaWx0ZXJzICJhcm02NC12OGEiCiAgICAgICAgICAgICB9CiAgICAgICAgICAgICBzb3VyY2VTZXRzLmRlYnVnIHsKICAgICAgICAgICAgICAgICBtYW5pZmVzdC5zcmNGaWxlICcuLi9UTWVzc2FnZXNQcm9qL2NvbmZpZy9kZWJ1Zy9BbmRyb2lkTWFuaWZlc3RfU0RLMjMueG1sJwpAQCAtMTQyLDcgKzE0Miw3IEBAIGFuZHJvaWQgewogICAgICAgICB9CiAgICAgICAgIGFmYXQgewogICAgICAgICAgICAgbmRrIHsKLSAgICAgICAgICAgICAgICBhYmlGaWx0ZXJzICJhcm1lYWJpLXY3YSIsICJhcm02NC12OGEiLCAieDg2IiwgIng4Nl82NCIKKyAgICAgICAgICAgICAgICBhYmlGaWx0ZXJzICJhcm02NC12OGEiCiAgICAgICAgICAgICB9CiAgICAgICAgICAgICBzb3VyY2VTZXRzLmRlYnVnIHsKICAgICAgICAgICAgICAgICBtYW5pZmVzdC5zcmNGaWxlICcuLi9UTWVzc2FnZXNQcm9qL2NvbmZpZy9kZWJ1Zy9BbmRyb2lkTWFuaWZlc3RfU0RLMjMueG1sJwo=' | base64 -d > fork.patch
+          git apply --whitespace=nowarn fork.patch
+          echo "--- проверка правок ---"
+          grep -n 'abiFilters' TMessagesProj_App/build.gradle
+          grep -n 'buildConfig' TMessagesProj/build.gradle
 
       - name: Write gradle.properties overrides
         # Задаётся отдельным шагом, а не патчем: так не ломается,
