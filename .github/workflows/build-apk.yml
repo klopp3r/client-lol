@@ -8,6 +8,9 @@ jobs:
     # Нужен x86-64: Android SDK и NDK не собираются под ARM.
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout upstream with submodules
         uses: actions/checkout@v4
@@ -136,6 +139,21 @@ jobs:
           ls -lh "$APK"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2" dump packagename "$APK"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
+
+      - name: Publish APK to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find telegram -name "*.apk" -path "*afat*release*" | head -1)
+          test -n "$APK" || { echo "APK не найден"; exit 1; }
+          cp "$APK" telegram-fork-arm64.apk
+          TAG="v12.10.5-fork"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Telegram fork 12.10.5 (arm64)" \
+              --notes "applicationId org.telegram.messenger.fork, ставится рядом с официальным. ABI arm64-v8a."
+          gh release upload "$TAG" telegram-fork-arm64.apk --clobber
+          echo "--- ссылка ---"
+          gh release view "$TAG" --json url -q .url
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
