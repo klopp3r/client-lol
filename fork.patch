@@ -1423,10 +1423,23 @@ index 1013bb6..323b0a9 100644
 +    <string name="ForkPluginDeleteConfirm">Delete this plugin? Its settings will be removed.</string>
  </resources>
 diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
-index ea7a853..9bd1608 100644
+index ea7a853..0c008fa 100644
 --- a/TMessagesProj_App/build.gradle
 +++ b/TMessagesProj_App/build.gradle
-@@ -117,7 +117,7 @@ android {
+@@ -93,7 +93,11 @@ android {
+             jniDebuggable false
+             signingConfig signingConfigs.release
+             minifyEnabled true
+-            shrinkResources true
++            // Ресурс-шейкер выкидывает строки, на которые ссылается код
++            // (проверено на CI: пропадают и наши Fork*, и штатные
++            // RoundVideoSettings/Cancel), поэтому в релизе форка он выключен.
++            // Лишние мегабайты в APK дешевле NotFoundException на устройстве.
++            shrinkResources false
+             multiDexEnabled true
+             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
+             ndk.debugSymbolLevel = 'FULL'
+@@ -117,7 +121,7 @@ android {
      productFlavors {
          bundleAfat {
              ndk {
@@ -1435,7 +1448,7 @@ index ea7a853..9bd1608 100644
              }
              ext {
                  abiVersionCode = 1
-@@ -126,7 +126,7 @@ android {
+@@ -126,7 +130,7 @@ android {
          }
          bundleAfat_SDK23 {
              ndk {
@@ -1444,7 +1457,7 @@ index ea7a853..9bd1608 100644
              }
              sourceSets.debug {
                  manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
-@@ -142,7 +142,7 @@ android {
+@@ -142,7 +146,7 @@ android {
          }
          afat {
              ndk {
