@@ -234,10 +234,10 @@ index 0000000..6b72237
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
 new file mode 100644
-index 0000000..b1da232
+index 0000000..6aa3c19
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
-@@ -0,0 +1,434 @@
+@@ -0,0 +1,453 @@
 +package org.telegram.messenger;
 +
 +import android.content.SharedPreferences;
@@ -276,6 +276,7 @@ index 0000000..b1da232
 +    private static final String PREFS = "fork_plugins";
 +    private static final String DIR = "fork-plugins";
 +    private static final String TAG = "@fork-plugin";
++    private static final String[] EXTENSIONS = {"js", "plugin"};
 +
 +    private static final Set<String> DENIED = new HashSet<>(Arrays.asList(
 +            "java.lang.Runtime",
@@ -378,7 +379,7 @@ index 0000000..b1da232
 +                }
 +            });
 +            for (int i = 0; i < files.length; i++) {
-+                if (files[i].isFile() && files[i].getName().endsWith(".js")) {
++                if (files[i].isFile() && pluginExtension(files[i].getName()) != null) {
 +                    plugins.add(parse(files[i]));
 +                }
 +            }
@@ -470,10 +471,24 @@ index 0000000..b1da232
 +        return plugin;
 +    }
 +
++    public static String pluginExtension(String fileName) {
++        if (fileName == null) {
++            return null;
++        }
++        String lower = fileName.toLowerCase(Locale.US);
++        for (int i = 0; i < EXTENSIONS.length; i++) {
++            if (lower.endsWith("." + EXTENSIONS[i])) {
++                return EXTENSIONS[i];
++            }
++        }
++        return null;
++    }
++
 +    private static String baseId(String fileName) {
 +        String name = fileName;
-+        if (name.endsWith(".js")) {
-+            name = name.substring(0, name.length() - 3);
++        String ext = pluginExtension(name);
++        if (ext != null) {
++            name = name.substring(0, name.length() - ext.length() - 1);
 +        }
 +        return sanitize(name);
 +    }
@@ -509,12 +524,16 @@ index 0000000..b1da232
 +    public synchronized ForkPlugin install(android.content.Context context, Uri uri) throws Exception {
 +        String display = queryName(context, uri);
 +        if (TextUtils.isEmpty(display)) {
-+            display = "plugin.js";
++            display = "plugin";
 +        }
-+        if (!display.toLowerCase(Locale.US).endsWith(".js")) {
-+            display += ".js";
++        // Расширение из имени файла уважаем: .plugin не переименовываем в .js.
++        // Нет известного расширения — считаем обычным JS-файлом.
++        String ext = pluginExtension(display);
++        String stem = ext == null ? display : display.substring(0, display.length() - ext.length() - 1);
++        if (ext == null) {
++            ext = EXTENSIONS[0];
 +        }
-+        display = sanitize(display.replace(".js", "")) + ".js";
++        display = sanitize(stem) + "." + ext;
 +
 +        InputStream in = context.getContentResolver().openInputStream(uri);
 +        if (in == null) {
@@ -1338,7 +1357,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..fb9fa91 100644
+index 24c5629..0a7ecac 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -1357,7 +1376,7 @@ index 24c5629..fb9fa91 100644
 +    <string name="ForkSettingsSection">Форк</string>
 +    <string name="ForkPlugins">Плагины</string>
 +    <string name="ForkPluginsLoad">Загрузить плагин из файла</string>
-+    <string name="ForkPluginsEmpty">Плагинов пока нет. Нажми «Загрузить плагин из файла» и выбери файл .js.</string>
++    <string name="ForkPluginsEmpty">Плагинов пока нет. Нажми «Загрузить плагин из файла» и выбери файл .js или .plugin.</string>
 +    <string name="ForkPluginsInfo">Плагин — это файл на JavaScript. Он выполняется в песочнице и может только добавлять свои настройки в этот раздел. Загружай плагины из источников, которым доверяешь.</string>
 +    <string name="ForkPluginEnabled">Включён</string>
 +    <string name="ForkPluginDisabled">Выключен</string>
@@ -1384,7 +1403,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..323b0a9 100644
+index 1013bb6..734aad7 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -1411,7 +1430,7 @@ index 1013bb6..323b0a9 100644
 +    <string name="ForkSettingsSection">Fork</string>
 +    <string name="ForkPlugins">Plugins</string>
 +    <string name="ForkPluginsLoad">Load plugin from file</string>
-+    <string name="ForkPluginsEmpty">No plugins installed yet. Tap "Load plugin from file" and pick a .js file.</string>
++    <string name="ForkPluginsEmpty">No plugins installed yet. Tap "Load plugin from file" and pick a .js or .plugin file.</string>
 +    <string name="ForkPluginsInfo">A plugin is a JavaScript file. It runs in a sandbox and can only add its own settings here. Load plugins from sources you trust.</string>
 +    <string name="ForkPluginEnabled">Enabled</string>
 +    <string name="ForkPluginDisabled">Disabled</string>
