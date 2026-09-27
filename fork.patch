@@ -14,19 +14,6 @@ index 85a9f84..f73dbcc 100644
      sourceSets.main.jniLibs.srcDirs = ['./jni/']
  
      externalNativeBuild {
-diff --git a/TMessagesProj/config/release/AndroidManifest_SDK23.xml b/TMessagesProj/config/release/AndroidManifest_SDK23.xml
-index 4e250e0..85fc2d2 100644
---- a/TMessagesProj/config/release/AndroidManifest_SDK23.xml
-+++ b/TMessagesProj/config/release/AndroidManifest_SDK23.xml
-@@ -30,7 +30,7 @@
-     <application
-         android:icon="@mipmap/ic_launcher"
-         android:roundIcon="@mipmap/ic_launcher_round"
--        android:label="@string/AppName"
-+        android:label="@string/ForkAppName"
-         android:theme="@style/Theme.TMessages.Start"
-         android:hardwareAccelerated="true"
-         android:largeHeap="true"
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 index 4ed7e64..6e4881f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
@@ -96,38 +83,134 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.msg2_gif, LocaleController.getString(R.string.LiteOptionsAutoplayGifs), LiteMode.FLAG_AUTOPLAY_GIFS));
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
-diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..e68c7a5 100644
---- a/TMessagesProj/src/main/res/values-ru/strings.xml
-+++ b/TMessagesProj/src/main/res/values-ru/strings.xml
-@@ -1,6 +1,7 @@
+diff --git a/TMessagesProj/src/main/res/values-ar/strings.xml b/TMessagesProj/src/main/res/values-ar/strings.xml
+index 8b87004..7b4c909 100644
+--- a/TMessagesProj/src/main/res/values-ar/strings.xml
++++ b/TMessagesProj/src/main/res/values-ar/strings.xml
+@@ -1,6 +1,6 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
-     <string name="AppName">Telegram</string>
-+    <string name="ForkAppName">Telegram Fork</string>
+-    <string name="AppName">تيليجرام</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">(Beta) تيليجرام</string>
+     <string name="LanguageName">العربية</string>
+     <string name="English">الإنجليزية</string>
+diff --git a/TMessagesProj/src/main/res/values-de/strings.xml b/TMessagesProj/src/main/res/values-de/strings.xml
+index 9054784..8b7d12a 100644
+--- a/TMessagesProj/src/main/res/values-de/strings.xml
++++ b/TMessagesProj/src/main/res/values-de/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">Deutsch</string>
+     <string name="English">Englisch</string>
+diff --git a/TMessagesProj/src/main/res/values-es/strings.xml b/TMessagesProj/src/main/res/values-es/strings.xml
+index 4779808..fba8b59 100644
+--- a/TMessagesProj/src/main/res/values-es/strings.xml
++++ b/TMessagesProj/src/main/res/values-es/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">Español</string>
+     <string name="English">Inglés</string>
+diff --git a/TMessagesProj/src/main/res/values-it/strings.xml b/TMessagesProj/src/main/res/values-it/strings.xml
+index 3e7688d..be8acf5 100644
+--- a/TMessagesProj/src/main/res/values-it/strings.xml
++++ b/TMessagesProj/src/main/res/values-it/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">Italiano</string>
+     <string name="English">Inglese</string>
+diff --git a/TMessagesProj/src/main/res/values-ko/strings.xml b/TMessagesProj/src/main/res/values-ko/strings.xml
+index 6f75e2e..b1f2f2b 100644
+--- a/TMessagesProj/src/main/res/values-ko/strings.xml
++++ b/TMessagesProj/src/main/res/values-ko/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">텔레그램</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">텔레그램</string>
+     <string name="LanguageName">한국어</string>
+     <string name="English">영어</string>
+diff --git a/TMessagesProj/src/main/res/values-nl/strings.xml b/TMessagesProj/src/main/res/values-nl/strings.xml
+index f3df87e..dbb13c5 100644
+--- a/TMessagesProj/src/main/res/values-nl/strings.xml
++++ b/TMessagesProj/src/main/res/values-nl/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram-bèta</string>
+     <string name="LanguageName">Nederlands</string>
+     <string name="English">Engels</string>
+diff --git a/TMessagesProj/src/main/res/values-pt-rBR/strings.xml b/TMessagesProj/src/main/res/values-pt-rBR/strings.xml
+index 03d0ba3..7dcde5b 100644
+--- a/TMessagesProj/src/main/res/values-pt-rBR/strings.xml
++++ b/TMessagesProj/src/main/res/values-pt-rBR/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">Português (Brasil)</string>
+     <string name="English">Inglês</string>
+diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
+index 24c5629..cc9426c 100644
+--- a/TMessagesProj/src/main/res/values-ru/strings.xml
++++ b/TMessagesProj/src/main/res/values-ru/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +264,5 @@
+@@ -263,4 +263,5 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
 +    <string name="LiteOptionsAutoplayVideoWifiOnly">Автовоспроизведение видео только по Wi-Fi</string>
  </resources>
 \ No newline at end of file
-diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..e625f67 100644
---- a/TMessagesProj/src/main/res/values/strings.xml
-+++ b/TMessagesProj/src/main/res/values/strings.xml
-@@ -1,6 +1,7 @@
+diff --git a/TMessagesProj/src/main/res/values-uk/strings.xml b/TMessagesProj/src/main/res/values-uk/strings.xml
+index d468344..27234a3 100644
+--- a/TMessagesProj/src/main/res/values-uk/strings.xml
++++ b/TMessagesProj/src/main/res/values-uk/strings.xml
+@@ -1,6 +1,6 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
-     <string name="AppName">Telegram</string>
-+    <string name="ForkAppName">Telegram Fork</string>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">Українська</string>
+     <string name="English">Англійська</string>
+diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
+index 1013bb6..22e04ef 100644
+--- a/TMessagesProj/src/main/res/values/strings.xml
++++ b/TMessagesProj/src/main/res/values/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="AppName">Telegram</string>
++    <string name="AppName">Telegram Fork</string>
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">English</string>
      <string name="English">English</string>
-@@ -6281,6 +6282,7 @@
+@@ -6281,6 +6281,7 @@
      <string name="LiteOptionsThanos">Dust-effect deletion</string>
      <string name="LiteOptionsCalls">Animations in Calls</string>
      <string name="LiteOptionsAutoplayVideo">Autoplay Videos</string>
