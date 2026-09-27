@@ -1241,6 +1241,16 @@ index b779126..c565a1f 100644
          }
      }
  
+diff --git a/TMessagesProj/src/main/res/raw/keep.xml b/TMessagesProj/src/main/res/raw/keep.xml
+new file mode 100644
+index 0000000..9d261be
+--- /dev/null
++++ b/TMessagesProj/src/main/res/raw/keep.xml
+@@ -0,0 +1,4 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources xmlns:tools="http://schemas.android.com/tools"
++    tools:keep="@string/Fork*,@string/LiteOptionsAutoplayVideoWifiOnly,@string/AppName"
++    tools:shrinkMode="safe" />
 diff --git a/TMessagesProj/src/main/res/values-ar/strings.xml b/TMessagesProj/src/main/res/values-ar/strings.xml
 index 8b87004..7b4c909 100644
 --- a/TMessagesProj/src/main/res/values-ar/strings.xml
