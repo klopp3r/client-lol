@@ -1372,13 +1372,14 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..fb97d7a 100644
+index 1013bb6..323b0a9 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
  <?xml version="1.0" encoding="utf-8"?>
- <resources>
+-<resources>
 -    <string name="AppName">Telegram</string>
++<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@string/Fork*,@string/LiteOptionsAutoplayVideoWifiOnly">
 +    <string name="AppName">Telegram Fork</string>
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">English</string>
