@@ -1,8 +1,18 @@
 diff --git a/TMessagesProj/build.gradle b/TMessagesProj/build.gradle
-index 85a9f84..f73dbcc 100644
+index 85a9f84..f914f52 100644
 --- a/TMessagesProj/build.gradle
 +++ b/TMessagesProj/build.gradle
-@@ -117,6 +117,11 @@ android {
+@@ -109,6 +109,9 @@ dependencies {
+     }
+     implementation 'com.google.android.recaptcha:recaptcha:18.7.1'
+ 
++    // Движок JS для плагинов форка (чистая Java, без нативных библиотек).
++    implementation 'org.mozilla:rhino:1.7.14'
++
+     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+ }
+ 
+@@ -117,6 +120,11 @@ android {
      buildToolsVersion '36.0.0'
      ndkVersion "27.2.12479018"
  
@@ -40,6 +50,612 @@ index 4ed7e64..6e4881f 100644
  
      static {
          if (ApplicationLoader.applicationContext != null) {
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java
+new file mode 100644
+index 0000000..2a162c0
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java
+@@ -0,0 +1,64 @@
++package org.telegram.messenger;
++
++import android.text.TextUtils;
++
++import org.mozilla.javascript.Scriptable;
++
++import java.util.ArrayList;
++
++public class ForkPlugin {
++    public static final int TYPE_SECTION = 0;
++    public static final int TYPE_SWITCH = 1;
++    public static final int TYPE_TEXT = 2;
++    public static final int TYPE_INFO = 3;
++    public static final int TYPE_ACTION = 4;
++
++    public final String fileName;
++    public final ArrayList<Row> rows = new ArrayList<>();
++
++    public String id;
++    public String name;
++    public String description;
++    public String author;
++    public String version;
++    public boolean enabled;
++    public String error;
++    public Scriptable scope;
++
++    public ForkPlugin(String fileName) {
++        this.fileName = fileName;
++        this.id = fileName;
++    }
++
++    public String subtitle() {
++        StringBuilder builder = new StringBuilder();
++        if (!TextUtils.isEmpty(version)) {
++            builder.append('v').append(version);
++        }
++        if (!TextUtils.isEmpty(author)) {
++            if (builder.length() > 0) {
++                builder.append(" - ");
++            }
++            builder.append(author);
++        }
++        return builder.toString();
++    }
++
++    public static class Row {
++        public final int type;
++        public final String key;
++        public final String title;
++        public final String summary;
++        public final String value;
++        public final Object action;
++
++        public Row(int type, String key, String title, String summary, String value, Object action) {
++            this.type = type;
++            this.key = key;
++            this.title = title;
++            this.summary = summary;
++            this.value = value;
++            this.action = action;
++        }
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginApi.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginApi.java
+new file mode 100644
+index 0000000..6b72237
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginApi.java
+@@ -0,0 +1,90 @@
++package org.telegram.messenger;
++
++import android.text.TextUtils;
++import android.widget.Toast;
++
++import org.mozilla.javascript.Function;
++
++public class ForkPluginApi {
++    private final ForkPlugin plugin;
++
++    public ForkPluginApi(ForkPlugin plugin) {
++        this.plugin = plugin;
++    }
++
++    public String getPluginId() {
++        return plugin.id;
++    }
++
++    public String getPluginName() {
++        return plugin.name;
++    }
++
++    public String getPluginVersion() {
++        return plugin.version;
++    }
++
++    public void log(String message) {
++        FileLog.d("[plugin " + plugin.id + "] " + message);
++    }
++
++    public void setFlag(String key, boolean value) {
++        ForkPluginManager.getInstance().setFlag(plugin.id, key, value);
++    }
++
++    public boolean getFlag(String key, boolean def) {
++        return ForkPluginManager.getInstance().getFlag(plugin.id, key, def);
++    }
++
++    public void setText(String key, String value) {
++        ForkPluginManager.getInstance().setText(plugin.id, key, value);
++    }
++
++    public String getText(String key, String def) {
++        return ForkPluginManager.getInstance().getText(plugin.id, key, def);
++    }
++
++    public void addSection(String title) {
++        plugin.rows.add(new ForkPlugin.Row(ForkPlugin.TYPE_SECTION, null, title, null, null, null));
++    }
++
++    public void addSwitch(String key, String title, boolean def, String summary) {
++        plugin.rows.add(new ForkPlugin.Row(ForkPlugin.TYPE_SWITCH, key, title, summary, null, null));
++    }
++
++    public void addSwitch(String key, String title, boolean def) {
++        addSwitch(key, title, def, null);
++    }
++
++    public void addText(String key, String title, String def, String summary) {
++        plugin.rows.add(new ForkPlugin.Row(ForkPlugin.TYPE_TEXT, key, title, summary, def, null));
++    }
++
++    public void addText(String key, String title, String def) {
++        addText(key, title, def, null);
++    }
++
++    public void addInfo(String text) {
++        plugin.rows.add(new ForkPlugin.Row(ForkPlugin.TYPE_INFO, null, text, null, null, null));
++    }
++
++    public void addAction(String title, String summary, Function onClick) {
++        plugin.rows.add(new ForkPlugin.Row(ForkPlugin.TYPE_ACTION, null, title, summary, null, onClick));
++    }
++
++    public void addAction(String title, Function onClick) {
++        addAction(title, null, onClick);
++    }
++
++    public void toast(final String text) {
++        if (TextUtils.isEmpty(text)) {
++            return;
++        }
++        AndroidUtilities.runOnUIThread(new Runnable() {
++            @Override
++            public void run() {
++                Toast.makeText(ApplicationLoader.applicationContext, text, Toast.LENGTH_SHORT).show();
++            }
++        });
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
+new file mode 100644
+index 0000000..b1da232
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
+@@ -0,0 +1,434 @@
++package org.telegram.messenger;
++
++import android.content.SharedPreferences;
++import android.database.Cursor;
++import android.net.Uri;
++import android.provider.OpenableColumns;
++import android.text.TextUtils;
++
++import org.json.JSONObject;
++import org.mozilla.javascript.ClassShutter;
++import org.mozilla.javascript.Context;
++import org.mozilla.javascript.ContextFactory;
++import org.mozilla.javascript.Function;
++import org.mozilla.javascript.Scriptable;
++import org.mozilla.javascript.ScriptableObject;
++import org.mozilla.javascript.WrapFactory;
++
++import java.io.ByteArrayOutputStream;
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.Comparator;
++import java.util.HashSet;
++import java.util.Locale;
++import java.util.Map;
++import java.util.Set;
++
++public class ForkPluginManager {
++    public static final int MAX_SOURCE_SIZE = 512 * 1024;
++    public static final long MAX_STEPS = 2_000_000L;
++
++    private static final String PREFS = "fork_plugins";
++    private static final String DIR = "fork-plugins";
++    private static final String TAG = "@fork-plugin";
++
++    private static final Set<String> DENIED = new HashSet<>(Arrays.asList(
++            "java.lang.Runtime",
++            "java.lang.ProcessBuilder",
++            "java.lang.Class",
++            "java.lang.ClassLoader",
++            "java.lang.System",
++            "java.lang.Thread",
++            "java.lang.ThreadGroup",
++            "java.lang.Module",
++            "java.lang.StackTraceElement"
++    ));
++
++    private static final class ForkContext extends Context {
++        private long steps;
++
++        @Override
++        protected void observeInstructionCount(int instructionCount) {
++            steps += instructionCount;
++            if (steps > MAX_STEPS) {
++                throw new IllegalStateException("plugin exceeded the instruction limit");
++            }
++        }
++    }
++
++    private static final WrapFactory WRAP_FACTORY = new WrapFactory();
++
++    static {
++        WRAP_FACTORY.setJavaPrimitiveWrap(false);
++    }
++
++    private static final ContextFactory FACTORY = new ContextFactory() {
++        @Override
++        protected Context makeContext() {
++            return new ForkContext();
++        }
++    };
++
++    private static final ClassShutter SHUTTER = new ClassShutter() {
++        @Override
++        public boolean visibleToScripts(String fullClassName) {
++            if (fullClassName.startsWith("org.mozilla.javascript.")) {
++                return true;
++            }
++            if (fullClassName.startsWith("org.json.")) {
++                return true;
++            }
++            if (fullClassName.equals("org.telegram.messenger.ForkPluginApi")
++                    || fullClassName.equals("org.telegram.messenger.ForkPlugin")
++                    || fullClassName.equals("org.telegram.messenger.ForkPlugin$Row")) {
++                return true;
++            }
++            if (fullClassName.startsWith("java.lang.")) {
++                return !DENIED.contains(fullClassName);
++            }
++            return false;
++        }
++    };
++
++    private static volatile ForkPluginManager instance;
++
++    private final ArrayList<ForkPlugin> plugins = new ArrayList<>();
++    private final ArrayList<Runnable> listeners = new ArrayList<>();
++    private boolean loaded;
++
++    public static ForkPluginManager getInstance() {
++        if (instance == null) {
++            synchronized (ForkPluginManager.class) {
++                if (instance == null) {
++                    instance = new ForkPluginManager();
++                }
++            }
++        }
++        return instance;
++    }
++
++    private SharedPreferences prefs() {
++        return ApplicationLoader.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE);
++    }
++
++    private File dir() {
++        File dir = new File(ApplicationLoader.applicationContext.getFilesDir(), DIR);
++        if (!dir.exists()) {
++            dir.mkdirs();
++        }
++        return dir;
++    }
++
++    public synchronized ArrayList<ForkPlugin> loadPlugins() {
++        if (loaded) {
++            return plugins;
++        }
++        loaded = true;
++        File[] files = dir().listFiles();
++        if (files != null) {
++            Arrays.sort(files, new Comparator<File>() {
++                @Override
++                public int compare(File a, File b) {
++                    return a.getName().compareTo(b.getName());
++                }
++            });
++            for (int i = 0; i < files.length; i++) {
++                if (files[i].isFile() && files[i].getName().endsWith(".js")) {
++                    plugins.add(parse(files[i]));
++                }
++            }
++        }
++        return plugins;
++    }
++
++    public synchronized ForkPlugin find(String id) {
++        if (id == null) {
++            return null;
++        }
++        for (int i = 0; i < loadPlugins().size(); i++) {
++            if (id.equals(loadPlugins().get(i).id)) {
++                return loadPlugins().get(i);
++            }
++        }
++        return null;
++    }
++
++    public synchronized void reload() {
++        loaded = false;
++        plugins.clear();
++        loadPlugins();
++        notifyListeners();
++    }
++
++    public void addListener(Runnable listener) {
++        synchronized (listeners) {
++            listeners.add(listener);
++        }
++    }
++
++    public void removeListener(Runnable listener) {
++        synchronized (listeners) {
++            listeners.remove(listener);
++        }
++    }
++
++    private void notifyListeners() {
++        ArrayList<Runnable> copy;
++        synchronized (listeners) {
++            copy = new ArrayList<>(listeners);
++        }
++        for (int i = 0; i < copy.size(); i++) {
++            copy.get(i).run();
++        }
++    }
++
++    private ForkPlugin parse(File file) {
++        ForkPlugin plugin = new ForkPlugin(file.getName());
++        plugin.id = baseId(file.getName());
++        plugin.name = plugin.id;
++        plugin.enabled = prefs().getBoolean("enabled/" + plugin.id, true);
++        try {
++            String head = readHead(file);
++            int tag = head.indexOf(TAG);
++            int start = tag < 0 ? -1 : head.indexOf('{', tag);
++            if (start >= 0) {
++                int depth = 0;
++                int end = -1;
++                for (int i = start; i < head.length(); i++) {
++                    char c = head.charAt(i);
++                    if (c == '{') {
++                        depth++;
++                    } else if (c == '}') {
++                        depth--;
++                        if (depth == 0) {
++                            end = i + 1;
++                            break;
++                        }
++                    }
++                }
++                if (end > start) {
++                    JSONObject json = new JSONObject(head.substring(start, end));
++                    String id = json.optString("id", "");
++                    if (!TextUtils.isEmpty(id)) {
++                        plugin.id = id;
++                        plugin.enabled = prefs().getBoolean("enabled/" + plugin.id, true);
++                    }
++                    plugin.name = json.optString("name", plugin.id);
++                    plugin.description = json.optString("description", "");
++                    plugin.author = json.optString("author", "");
++                    plugin.version = json.optString("version", "");
++                }
++            }
++        } catch (Throwable t) {
++            plugin.error = describe(t);
++        }
++        return plugin;
++    }
++
++    private static String baseId(String fileName) {
++        String name = fileName;
++        if (name.endsWith(".js")) {
++            name = name.substring(0, name.length() - 3);
++        }
++        return sanitize(name);
++    }
++
++    private static String sanitize(String name) {
++        StringBuilder builder = new StringBuilder();
++        for (int i = 0; i < name.length(); i++) {
++            char c = name.charAt(i);
++            if (Character.isLetterOrDigit(c) || c == '.' || c == '_' || c == '-') {
++                builder.append(c);
++            } else {
++                builder.append('_');
++            }
++        }
++        String result = builder.toString().toLowerCase(Locale.US);
++        return TextUtils.isEmpty(result) ? "plugin" : result;
++    }
++
++    private static String readHead(File file) throws Exception {
++        InputStream in = new FileInputStream(file);
++        try {
++            byte[] buffer = new byte[8192];
++            int read = in.read(buffer);
++            if (read <= 0) {
++                return "";
++            }
++            return new String(buffer, 0, read, "UTF-8");
++        } finally {
++            in.close();
++        }
++    }
++
++    public synchronized ForkPlugin install(android.content.Context context, Uri uri) throws Exception {
++        String display = queryName(context, uri);
++        if (TextUtils.isEmpty(display)) {
++            display = "plugin.js";
++        }
++        if (!display.toLowerCase(Locale.US).endsWith(".js")) {
++            display += ".js";
++        }
++        display = sanitize(display.replace(".js", "")) + ".js";
++
++        InputStream in = context.getContentResolver().openInputStream(uri);
++        if (in == null) {
++            throw new IllegalStateException("cannot open file");
++        }
++        ByteArrayOutputStream out = new ByteArrayOutputStream();
++        try {
++            byte[] buffer = new byte[8192];
++            int read;
++            while ((read = in.read(buffer)) > 0) {
++                out.write(buffer, 0, read);
++                if (out.size() > MAX_SOURCE_SIZE) {
++                    throw new IllegalStateException("file is too large");
++                }
++            }
++        } finally {
++            try {
++                in.close();
++            } catch (Throwable ignored) {
++            }
++        }
++
++        File target = new File(dir(), display);
++        FileOutputStream file = new FileOutputStream(target);
++        try {
++            file.write(out.toByteArray());
++            file.flush();
++        } finally {
++            file.close();
++        }
++
++        reload();
++        return find(baseId(display));
++    }
++
++    private static String queryName(android.content.Context context, Uri uri) {
++        Cursor cursor = null;
++        try {
++            cursor = context.getContentResolver().query(uri, null, null, null, null);
++            if (cursor != null && cursor.moveToFirst()) {
++                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
++                if (index >= 0) {
++                    return cursor.getString(index);
++                }
++            }
++        } catch (Throwable ignored) {
++        } finally {
++            if (cursor != null) {
++                try {
++                    cursor.close();
++                } catch (Throwable ignored) {
++                }
++            }
++        }
++        return null;
++    }
++
++    public void setEnabled(ForkPlugin plugin, boolean enabled) {
++        plugin.enabled = enabled;
++        prefs().edit().putBoolean("enabled/" + plugin.id, enabled).apply();
++        notifyListeners();
++    }
++
++    public void delete(ForkPlugin plugin) {
++        new File(dir(), plugin.fileName).delete();
++        SharedPreferences.Editor editor = prefs().edit();
++        editor.remove("enabled/" + plugin.id);
++        for (Map.Entry<String, ?> entry : prefs().getAll().entrySet()) {
++            if (entry.getKey() != null && entry.getKey().startsWith(plugin.id + "/")) {
++                editor.remove(entry.getKey());
++            }
++        }
++        editor.apply();
++        reload();
++    }
++
++    public boolean getFlag(String pluginId, String key, boolean def) {
++        return prefs().getBoolean(pluginId + "/" + key, def);
++    }
++
++    public void setFlag(String pluginId, String key, boolean value) {
++        prefs().edit().putBoolean(pluginId + "/" + key, value).apply();
++    }
++
++    public String getText(String pluginId, String key, String def) {
++        return prefs().getString(pluginId + "/" + key, def);
++    }
++
++    public void setText(String pluginId, String key, String value) {
++        prefs().edit().putString(pluginId + "/" + key, value).apply();
++    }
++
++    public void run(final ForkPlugin plugin) {
++        plugin.rows.clear();
++        plugin.error = null;
++        File file = new File(dir(), plugin.fileName);
++        if (!file.exists() || file.length() > MAX_SOURCE_SIZE) {
++            plugin.error = "source file is missing or too large";
++            return;
++        }
++        Context cx = FACTORY.enterContext();
++        try {
++            prepare(cx);
++            Scriptable scope = cx.initStandardObjects();
++            plugin.scope = scope;
++            putApi(cx, scope, plugin);
++            InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8");
++            try {
++                cx.evaluateReader(scope, reader, plugin.fileName, 1, null);
++            } finally {
++                reader.close();
++            }
++        } catch (Throwable t) {
++            plugin.error = describe(t);
++        } finally {
++            Context.exit();
++        }
++    }
++
++    public void callAction(ForkPlugin plugin, Object action, Object... args) {
++        if (!(action instanceof Function) || plugin.scope == null) {
++            return;
++        }
++        Context cx = FACTORY.enterContext();
++        try {
++            prepare(cx);
++            Scriptable scope = plugin.scope;
++            putApi(cx, scope, plugin);
++            ((Function) action).call(cx, scope, scope, args == null ? new Object[0] : args);
++        } catch (Throwable t) {
++            plugin.error = describe(t);
++        } finally {
++            Context.exit();
++        }
++    }
++
++    private static void putApi(Context cx, Scriptable scope, ForkPlugin plugin) {
++        ScriptableObject.putProperty(scope, "fork", Context.javaToJS(new ForkPluginApi(plugin), scope));
++    }
++
++    private static void prepare(Context cx) {
++        cx.setWrapFactory(WRAP_FACTORY);
++        cx.setOptimizationLevel(-1);
++        cx.setLanguageVersion(Context.VERSION_ES6);
++        cx.setClassShutter(SHUTTER);
++        cx.setInstructionObserverThreshold(10000);
++    }
++
++    private static String describe(Throwable t) {
++        String name = t.getClass().getSimpleName();
++        String message = t.getMessage();
++        if (TextUtils.isEmpty(message)) {
++            return name;
++        }
++        return name + ": " + message;
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java b/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
 index 6c37252..1ff451f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
@@ -71,6 +687,506 @@ index 39f493f..33534fb 100644
      }
  
      public static boolean isAutoplayGifs() {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginSettingsActivity.java
+new file mode 100644
+index 0000000..de6892e
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginSettingsActivity.java
+@@ -0,0 +1,280 @@
++package org.telegram.ui;
++
++import android.content.Context;
++import android.text.InputType;
++import android.text.TextUtils;
++import android.util.TypedValue;
++import android.view.View;
++import android.view.ViewGroup;
++import android.view.inputmethod.EditorInfo;
++import android.widget.EditText;
++import android.widget.FrameLayout;
++
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++
++import org.telegram.messenger.AndroidUtilities;
++import org.telegram.messenger.ForkPlugin;
++import org.telegram.messenger.ForkPluginManager;
++import org.telegram.messenger.LocaleController;
++import org.telegram.messenger.R;
++import org.telegram.ui.ActionBar.ActionBar;
++import org.telegram.ui.ActionBar.AlertDialog;
++import org.telegram.ui.ActionBar.BaseFragment;
++import org.telegram.ui.ActionBar.Theme;
++import org.telegram.ui.Cells.HeaderCell;
++import org.telegram.ui.Cells.TextCheckCell;
++import org.telegram.ui.Cells.TextInfoPrivacyCell;
++import org.telegram.ui.Cells.TextSettingsCell;
++import org.telegram.ui.Components.AlertsCreator;
++import org.telegram.ui.Components.LayoutHelper;
++import org.telegram.ui.Components.RecyclerListView;
++
++import java.util.ArrayList;
++
++public class ForkPluginSettingsActivity extends BaseFragment {
++    private static final int TYPE_CHECK = 0;
++    private static final int TYPE_SECTION = 1;
++    private static final int TYPE_SWITCH = 2;
++    private static final int TYPE_TEXT = 3;
++    private static final int TYPE_ACTION = 4;
++    private static final int TYPE_INFO = 5;
++
++    private static final int ROW_ENABLED = 0;
++    private static final int ROW_FIRST = 1;
++
++    private final String pluginId;
++    private final ArrayList<ForkPlugin.Row> rows = new ArrayList<>();
++
++    private ForkPlugin plugin;
++    private RecyclerListView listView;
++    private ListAdapter adapter;
++
++    public ForkPluginSettingsActivity(String pluginId) {
++        this.pluginId = pluginId;
++    }
++
++    @Override
++    public View createView(Context context) {
++        plugin = ForkPluginManager.getInstance().find(pluginId);
++
++        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
++        actionBar.setAllowOverlayTitle(true);
++        actionBar.setTitle(plugin != null ? plugin.name : LocaleController.getString(R.string.ForkPlugins));
++        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
++            @Override
++            public void onItemClick(int id) {
++                if (id == -1) {
++                    finishFragment();
++                } else if (id == 1) {
++                    if (plugin != null) {
++                        confirmDelete();
++                    }
++                }
++            }
++        });
++        if (plugin != null) {
++            actionBar.createMenu().addItem(1, R.drawable.iv_media_delete);
++        }
++
++        FrameLayout frameLayout = new FrameLayout(context);
++        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
++        fragmentView = frameLayout;
++
++        listView = new RecyclerListView(context);
++        actionBar.setAdaptiveBackground(listView);
++        listView.setLayoutManager(new LinearLayoutManager(context));
++        listView.setVerticalScrollBarEnabled(false);
++        listView.setAdapter(adapter = new ListAdapter(context));
++        listView.setOnItemClickListener((view, position) -> onRowClicked(position));
++        frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
++
++        load();
++        return fragmentView;
++    }
++
++    private void load() {
++        rows.clear();
++        if (plugin != null && plugin.enabled) {
++            ForkPluginManager.getInstance().run(plugin);
++            if (plugin.rows != null) {
++                rows.addAll(plugin.rows);
++            }
++        }
++        if (adapter != null) {
++            adapter.notifyDataSetChanged();
++        }
++    }
++
++    private void onRowClicked(int position) {
++        if (plugin == null) {
++            finishFragment();
++            return;
++        }
++        if (position == ROW_ENABLED) {
++            ForkPluginManager.getInstance().setEnabled(plugin, !plugin.enabled);
++            load();
++            return;
++        }
++        int index = position - ROW_FIRST;
++        if (index < 0 || index >= rows.size()) {
++            return;
++        }
++        ForkPlugin.Row row = rows.get(index);
++        if (row.type == ForkPlugin.TYPE_SWITCH) {
++            boolean value = !ForkPluginManager.getInstance().getFlag(plugin.id, row.key, false);
++            ForkPluginManager.getInstance().setFlag(plugin.id, row.key, value);
++            load();
++        } else if (row.type == ForkPlugin.TYPE_TEXT) {
++            showTextDialog(row);
++        } else if (row.type == ForkPlugin.TYPE_ACTION) {
++            ForkPluginManager.getInstance().callAction(plugin, row.action);
++            load();
++        }
++    }
++
++    private void showTextDialog(ForkPlugin.Row row) {
++        Context context = getParentActivity();
++        if (context == null) {
++            return;
++        }
++        final EditText editText = new EditText(context);
++        editText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
++        editText.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
++        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
++        editText.setBackground(Theme.createEditTextDrawable(context, true));
++        editText.setText(ForkPluginManager.getInstance().getText(plugin.id, row.key, row.value));
++        editText.setSingleLine(true);
++        editText.setInputType(InputType.TYPE_CLASS_TEXT);
++        editText.setImeOptions(EditorInfo.IME_ACTION_DONE);
++        editText.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(8), AndroidUtilities.dp(16), AndroidUtilities.dp(8));
++
++        AlertDialog.Builder builder = new AlertDialog.Builder(context);
++        builder.setTitle(row.title);
++        builder.setView(editText);
++        builder.setPositiveButton(LocaleController.getString(R.string.OK), (dialog, which) -> {
++            ForkPluginManager.getInstance().setText(plugin.id, row.key, editText.getText().toString());
++            load();
++        });
++        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
++        showDialog(builder.create());
++    }
++
++    private void confirmDelete() {
++        AlertsCreator.showSimpleConfirmAlert(this,
++                LocaleController.getString(R.string.ForkPluginDelete),
++                LocaleController.getString(R.string.ForkPluginDeleteConfirm),
++                LocaleController.getString(R.string.Delete), true, () -> {
++                    ForkPluginManager.getInstance().delete(plugin);
++                    finishFragment();
++                });
++    }
++
++    private class ListAdapter extends RecyclerListView.SelectionAdapter {
++        private final Context context;
++
++        private ListAdapter(Context context) {
++            this.context = context;
++        }
++
++        @Override
++        public int getItemCount() {
++            return plugin == null ? 0 : rows.size() + ROW_FIRST + 1;
++        }
++
++        @Override
++        public boolean isEnabled(RecyclerView.ViewHolder holder) {
++            int position = holder.getAdapterPosition();
++            if (position == ROW_ENABLED) {
++                return true;
++            }
++            int index = position - ROW_FIRST;
++            if (index < 0 || index >= rows.size()) {
++                return false;
++            }
++            int type = rows.get(index).type;
++            return type == ForkPlugin.TYPE_SWITCH || type == ForkPlugin.TYPE_TEXT || type == ForkPlugin.TYPE_ACTION;
++        }
++
++        @NonNull
++        @Override
++        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++            View view;
++            switch (viewType) {
++                case TYPE_CHECK:
++                    view = new TextCheckCell(context);
++                    break;
++                case TYPE_SECTION:
++                    view = new HeaderCell(context);
++                    break;
++                case TYPE_INFO:
++                    view = new TextInfoPrivacyCell(context);
++                    break;
++                default:
++                    TextSettingsCell cell = new TextSettingsCell(context);
++                    cell.setCanDisable(false);
++                    view = cell;
++                    break;
++            }
++            view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++            return new RecyclerListView.Holder(view);
++        }
++
++        @Override
++        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
++            int type = getItemViewType(position);
++            if (type == TYPE_CHECK) {
++                TextCheckCell cell = (TextCheckCell) holder.itemView;
++                cell.setTextAndCheck(LocaleController.getString(R.string.ForkPluginEnabled), plugin.enabled, false);
++            } else if (type == TYPE_SECTION) {
++                HeaderCell cell = (HeaderCell) holder.itemView;
++                cell.setText(rows.get(position - ROW_FIRST).title);
++            } else if (type == TYPE_INFO) {
++                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
++                if (!TextUtils.isEmpty(plugin.error)) {
++                    cell.setText(LocaleController.getString(R.string.ForkPluginError) + ": " + plugin.error);
++                } else if (!TextUtils.isEmpty(plugin.description)) {
++                    cell.setText(plugin.description);
++                } else {
++                    cell.setText(LocaleController.getString(R.string.ForkPluginNoSettings));
++                }
++            } else {
++                ForkPlugin.Row row = rows.get(position - ROW_FIRST);
++                TextSettingsCell cell = (TextSettingsCell) holder.itemView;
++                if (row.type == ForkPlugin.TYPE_SWITCH) {
++                    boolean value = ForkPluginManager.getInstance().getFlag(plugin.id, row.key, false);
++                    cell.setTextAndValue(row.title, value ? LocaleController.getString(R.string.ForkPluginOn) : LocaleController.getString(R.string.ForkPluginOff), false);
++                } else if (row.type == ForkPlugin.TYPE_TEXT) {
++                    String value = ForkPluginManager.getInstance().getText(plugin.id, row.key, row.value);
++                    cell.setTextAndValue(row.title, value, false);
++                } else {
++                    cell.setTextAndValue(row.title, LocaleController.getString(R.string.ForkPluginRun), false);
++                }
++            }
++        }
++
++        @Override
++        public int getItemViewType(int position) {
++            if (position == ROW_ENABLED) {
++                return TYPE_CHECK;
++            }
++            int index = position - ROW_FIRST;
++            if (index >= rows.size()) {
++                return TYPE_INFO;
++            }
++            switch (rows.get(index).type) {
++                case ForkPlugin.TYPE_SECTION:
++                    return TYPE_SECTION;
++                case ForkPlugin.TYPE_SWITCH:
++                    return TYPE_SWITCH;
++                case ForkPlugin.TYPE_TEXT:
++                    return TYPE_TEXT;
++                case ForkPlugin.TYPE_ACTION:
++                    return TYPE_ACTION;
++                default:
++                    return TYPE_INFO;
++            }
++        }
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
+new file mode 100644
+index 0000000..faf2999
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
+@@ -0,0 +1,208 @@
++package org.telegram.ui;
++
++import android.content.Context;
++import android.content.Intent;
++import android.net.Uri;
++import android.text.TextUtils;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++
++import org.telegram.messenger.AndroidUtilities;
++import org.telegram.messenger.ForkPlugin;
++import org.telegram.messenger.ForkPluginManager;
++import org.telegram.messenger.LocaleController;
++import org.telegram.messenger.R;
++import org.telegram.ui.ActionBar.ActionBar;
++import org.telegram.ui.ActionBar.BaseFragment;
++import org.telegram.ui.ActionBar.Theme;
++import org.telegram.ui.Cells.TextInfoPrivacyCell;
++import org.telegram.ui.Cells.TextSettingsCell;
++import org.telegram.ui.Components.AlertsCreator;
++import org.telegram.ui.Components.LayoutHelper;
++import org.telegram.ui.Components.RecyclerListView;
++
++import java.util.ArrayList;
++
++public class ForkPluginsActivity extends BaseFragment {
++    private static final int REQUEST_LOAD = 3101;
++
++    private static final int TYPE_ACTION = 0;
++    private static final int TYPE_PLUGIN = 1;
++    private static final int TYPE_INFO = 2;
++
++    private static final int ROW_LOAD = 0;
++
++    private RecyclerListView listView;
++    private ListAdapter adapter;
++    private final ArrayList<ForkPlugin> plugins = new ArrayList<>();
++
++    @Override
++    public View createView(Context context) {
++        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
++        actionBar.setAllowOverlayTitle(true);
++        actionBar.setTitle(LocaleController.getString(R.string.ForkPlugins));
++        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
++            @Override
++            public void onItemClick(int id) {
++                if (id == -1) {
++                    finishFragment();
++                }
++            }
++        });
++
++        FrameLayout frameLayout = new FrameLayout(context);
++        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
++        fragmentView = frameLayout;
++
++        listView = new RecyclerListView(context);
++        actionBar.setAdaptiveBackground(listView);
++        listView.setLayoutManager(new LinearLayoutManager(context));
++        listView.setVerticalScrollBarEnabled(false);
++        listView.setAdapter(adapter = new ListAdapter(context));
++        listView.setOnItemClickListener((view, position) -> onRowClicked(position));
++        frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
++
++        update();
++        return fragmentView;
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        if (listView != null) {
++            update();
++        }
++    }
++
++    private void update() {
++        plugins.clear();
++        plugins.addAll(ForkPluginManager.getInstance().loadPlugins());
++        if (adapter != null) {
++            adapter.notifyDataSetChanged();
++        }
++    }
++
++    private void onRowClicked(int position) {
++        if (position == ROW_LOAD) {
++            openFilePicker();
++            return;
++        }
++        int index = position - 1;
++        if (index < 0 || index >= plugins.size()) {
++            return;
++        }
++        presentFragment(new ForkPluginSettingsActivity(plugins.get(index).id));
++    }
++
++    private void openFilePicker() {
++        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
++        intent.addCategory(Intent.CATEGORY_OPENABLE);
++        intent.setType("*/*");
++        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/javascript", "application/javascript", "text/plain", "application/octet-stream", "*/*"});
++        startActivityForResult(intent, REQUEST_LOAD);
++    }
++
++    @Override
++    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
++        if (requestCode != REQUEST_LOAD) {
++            super.onActivityResultFragment(requestCode, resultCode, data);
++            return;
++        }
++        if (resultCode != android.app.Activity.RESULT_OK || data == null || data.getData() == null) {
++            return;
++        }
++        final Uri uri = data.getData();
++        new Thread(() -> {
++            String error = null;
++            try {
++                ForkPluginManager.getInstance().install(getParentActivity(), uri);
++            } catch (Throwable t) {
++                error = t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
++            }
++            final String message = error;
++            AndroidUtilities.runOnUIThread(() -> {
++                if (message != null) {
++                    AlertsCreator.showSimpleAlert(ForkPluginsActivity.this, LocaleController.getString(R.string.ForkPlugins), message);
++                } else {
++                    AlertsCreator.showSimpleAlert(ForkPluginsActivity.this, LocaleController.getString(R.string.ForkPlugins), LocaleController.getString(R.string.ForkPluginInstalled));
++                }
++                update();
++            });
++        }).start();
++    }
++
++    private class ListAdapter extends RecyclerListView.SelectionAdapter {
++        private final Context context;
++
++        private ListAdapter(Context context) {
++            this.context = context;
++        }
++
++        @Override
++        public int getItemCount() {
++            return plugins.size() + 2;
++        }
++
++        @Override
++        public boolean isEnabled(RecyclerView.ViewHolder holder) {
++            return true;
++        }
++
++        @NonNull
++        @Override
++        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++            View view;
++            if (viewType == TYPE_ACTION || viewType == TYPE_PLUGIN) {
++                TextSettingsCell cell = new TextSettingsCell(context);
++                cell.setCanDisable(false);
++                view = cell;
++            } else {
++                view = new TextInfoPrivacyCell(context);
++            }
++            view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++            return new RecyclerListView.Holder(view);
++        }
++
++        @Override
++        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
++            int type = getItemViewType(position);
++            if (type == TYPE_ACTION) {
++                TextSettingsCell cell = (TextSettingsCell) holder.itemView;
++                cell.setText(LocaleController.getString(R.string.ForkPluginsLoad), true);
++            } else if (type == TYPE_PLUGIN) {
++                ForkPlugin plugin = plugins.get(position - 1);
++                TextSettingsCell cell = (TextSettingsCell) holder.itemView;
++                String value = plugin.subtitle();
++                if (TextUtils.isEmpty(value)) {
++                    value = plugin.enabled
++                            ? LocaleController.getString(R.string.ForkPluginEnabled)
++                            : LocaleController.getString(R.string.ForkPluginDisabled);
++                } else if (!plugin.enabled) {
++                    value = value + " - " + LocaleController.getString(R.string.ForkPluginDisabled);
++                }
++                cell.setTextAndValue(plugin.name, value, false);
++            } else {
++                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
++                cell.setText(plugins.isEmpty()
++                        ? LocaleController.getString(R.string.ForkPluginsEmpty)
++                        : LocaleController.getString(R.string.ForkPluginsInfo));
++            }
++        }
++
++        @Override
++        public int getItemViewType(int position) {
++            if (position == ROW_LOAD) {
++                return TYPE_ACTION;
++            }
++            if (position == plugins.size() + 1) {
++                return TYPE_INFO;
++            }
++            return TYPE_PLUGIN;
++        }
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/LiteModeSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/LiteModeSettingsActivity.java
 index 79abb08..e21cc49 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/LiteModeSettingsActivity.java
@@ -83,6 +1199,32 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.msg2_gif, LocaleController.getString(R.string.LiteOptionsAutoplayGifs), LiteMode.FLAG_AUTOPLAY_GIFS));
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
+index b779126..c565a1f 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
+@@ -745,6 +745,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+             items.add(SettingCell.Factory.of(24, 0xFFF45255, 0xFFDF3955, 0, getString(R.string.RoundVideoSettings)));
+         }
+ 
++        items.add(UItem.asShadow(null));
++        items.add(UItem.asHeader(getString(R.string.ForkSettingsSection)));
++        items.add(SettingCell.Factory.of(30, 0xFF4FA9F5, 0xFF2E7BD0, 0, getString(R.string.ForkPlugins)));
++
+         if (BuildVars.LOGS_ENABLED || BuildVars.DEBUG_PRIVATE_VERSION) {
+             items.add(UItem.asShadow(null));
+             items.add(UItem.asHeader(getString(R.string.SettingsDebug)));
+@@ -887,6 +891,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+                 presentFragment(new RoundVideoSettingsActivity());
+                 break;
+             }
++            case 30: {
++                presentSettingFragment(new ForkPluginsActivity());
++                break;
++            }
+         }
+     }
+ 
 diff --git a/TMessagesProj/src/main/res/values-ar/strings.xml b/TMessagesProj/src/main/res/values-ar/strings.xml
 index 8b87004..7b4c909 100644
 --- a/TMessagesProj/src/main/res/values-ar/strings.xml
@@ -168,7 +1310,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..cc9426c 100644
+index 24c5629..fb9fa91 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -179,11 +1321,26 @@ index 24c5629..cc9426c 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,5 @@
+@@ -263,4 +263,20 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
 +    <string name="LiteOptionsAutoplayVideoWifiOnly">Автовоспроизведение видео только по Wi-Fi</string>
++    <string name="ForkSettingsSection">Форк</string>
++    <string name="ForkPlugins">Плагины</string>
++    <string name="ForkPluginsLoad">Загрузить плагин из файла</string>
++    <string name="ForkPluginsEmpty">Плагинов пока нет. Нажми «Загрузить плагин из файла» и выбери файл .js.</string>
++    <string name="ForkPluginsInfo">Плагин — это файл на JavaScript. Он выполняется в песочнице и может только добавлять свои настройки в этот раздел. Загружай плагины из источников, которым доверяешь.</string>
++    <string name="ForkPluginEnabled">Включён</string>
++    <string name="ForkPluginDisabled">Выключен</string>
++    <string name="ForkPluginOn">Вкл</string>
++    <string name="ForkPluginOff">Выкл</string>
++    <string name="ForkPluginRun">Запустить</string>
++    <string name="ForkPluginInstalled">Плагин установлен.</string>
++    <string name="ForkPluginError">Ошибка</string>
++    <string name="ForkPluginNoSettings">Плагин не добавил настроек.</string>
++    <string name="ForkPluginDelete">Удалить плагин</string>
++    <string name="ForkPluginDeleteConfirm">Удалить этот плагин? Его настройки будут сброшены.</string>
  </resources>
 \ No newline at end of file
 diff --git a/TMessagesProj/src/main/res/values-uk/strings.xml b/TMessagesProj/src/main/res/values-uk/strings.xml
@@ -199,7 +1356,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..22e04ef 100644
+index 1013bb6..fb97d7a 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -218,6 +1375,26 @@ index 1013bb6..22e04ef 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
+@@ -11235,4 +11236,19 @@
+     <string name="RoundVideoComposition">Composition</string>
+     <string name="RoundVideoCompositionEnabled">Round video styling</string>
+     <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
++    <string name="ForkSettingsSection">Fork</string>
++    <string name="ForkPlugins">Plugins</string>
++    <string name="ForkPluginsLoad">Load plugin from file</string>
++    <string name="ForkPluginsEmpty">No plugins installed yet. Tap "Load plugin from file" and pick a .js file.</string>
++    <string name="ForkPluginsInfo">A plugin is a JavaScript file. It runs in a sandbox and can only add its own settings here. Load plugins from sources you trust.</string>
++    <string name="ForkPluginEnabled">Enabled</string>
++    <string name="ForkPluginDisabled">Disabled</string>
++    <string name="ForkPluginOn">On</string>
++    <string name="ForkPluginOff">Off</string>
++    <string name="ForkPluginRun">Run</string>
++    <string name="ForkPluginInstalled">Plugin installed.</string>
++    <string name="ForkPluginError">Error</string>
++    <string name="ForkPluginNoSettings">This plugin did not add any settings.</string>
++    <string name="ForkPluginDelete">Delete plugin</string>
++    <string name="ForkPluginDeleteConfirm">Delete this plugin? Its settings will be removed.</string>
+ </resources>
 diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
 index ea7a853..9bd1608 100644
 --- a/TMessagesProj_App/build.gradle
