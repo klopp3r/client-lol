@@ -14,37 +14,45 @@ index 85a9f84..f73dbcc 100644
      sourceSets.main.jniLibs.srcDirs = ['./jni/']
  
      externalNativeBuild {
-diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
-index ea7a853..9bd1608 100644
---- a/TMessagesProj_App/build.gradle
-+++ b/TMessagesProj_App/build.gradle
-@@ -117,7 +117,7 @@ android {
-     productFlavors {
-         bundleAfat {
-             ndk {
--                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-+                abiFilters "arm64-v8a"
-             }
-             ext {
-                 abiVersionCode = 1
-@@ -126,7 +126,7 @@ android {
-         }
-         bundleAfat_SDK23 {
-             ndk {
--                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-+                abiFilters "arm64-v8a"
-             }
-             sourceSets.debug {
-                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
-@@ -142,7 +142,7 @@ android {
-         }
-         afat {
-             ndk {
--                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-+                abiFilters "arm64-v8a"
-             }
-             sourceSets.debug {
-                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
+diff --git a/TMessagesProj/config/release/AndroidManifest_SDK23.xml b/TMessagesProj/config/release/AndroidManifest_SDK23.xml
+index 4e250e0..85fc2d2 100644
+--- a/TMessagesProj/config/release/AndroidManifest_SDK23.xml
++++ b/TMessagesProj/config/release/AndroidManifest_SDK23.xml
+@@ -30,7 +30,7 @@
+     <application
+         android:icon="@mipmap/ic_launcher"
+         android:roundIcon="@mipmap/ic_launcher_round"
+-        android:label="@string/AppName"
++        android:label="@string/ForkAppName"
+         android:theme="@style/Theme.TMessages.Start"
+         android:hardwareAccelerated="true"
+         android:largeHeap="true"
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+index 4ed7e64..6e4881f 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+@@ -22,7 +22,7 @@ public class BuildVars {
+     public static boolean LOGS_ENABLED = BuildConfig.DEBUG_VERSION;
+     public static boolean DEBUG_PRIVATE_VERSION = BuildConfig.DEBUG_PRIVATE_VERSION;
+     public static boolean USE_CLOUD_STRINGS = true;
+-    public static boolean CHECK_UPDATES = true;
++    public static boolean CHECK_UPDATES = false;
+     public static boolean NO_SCOPED_STORAGE = Build.VERSION.SDK_INT <= 29;
+     public static String BUILD_VERSION_STRING = BuildConfig.BUILD_VERSION_STRING;
+ 
+@@ -38,10 +38,10 @@ public class BuildVars {
+     public static String HUAWEI_APP_ID = "101184875";
+ 
+     // You can use this flag to disable Google Play Billing (If you're making fork and want it to be in Google Play)
+-    public static boolean IS_BILLING_UNAVAILABLE = false;
++    public static boolean IS_BILLING_UNAVAILABLE = true;
+ 
+     // works only on official app ids, disable on your forks
+-    public static boolean SUPPORTS_PASSKEYS = true;
++    public static boolean SUPPORTS_PASSKEYS = false;
+ 
+     static {
+         if (ApplicationLoader.applicationContext != null) {
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java b/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
 index 6c37252..1ff451f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
@@ -89,10 +97,18 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..fbb6155 100644
+index 24c5629..e68c7a5 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
-@@ -263,4 +263,5 @@
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+     <string name="AppName">Telegram</string>
++    <string name="ForkAppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">Русский</string>
+     <string name="English">Английский</string>
+@@ -263,4 +264,5 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -100,10 +116,18 @@ index 24c5629..fbb6155 100644
  </resources>
 \ No newline at end of file
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..66ba3f6 100644
+index 1013bb6..e625f67 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
-@@ -6281,6 +6281,7 @@
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+     <string name="AppName">Telegram</string>
++    <string name="ForkAppName">Telegram Fork</string>
+     <string name="AppNameBeta">Telegram Beta</string>
+     <string name="LanguageName">English</string>
+     <string name="English">English</string>
+@@ -6281,6 +6282,7 @@
      <string name="LiteOptionsThanos">Dust-effect deletion</string>
      <string name="LiteOptionsCalls">Animations in Calls</string>
      <string name="LiteOptionsAutoplayVideo">Autoplay Videos</string>
@@ -111,3 +135,34 @@ index 1013bb6..66ba3f6 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
+diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
+index ea7a853..9bd1608 100644
+--- a/TMessagesProj_App/build.gradle
++++ b/TMessagesProj_App/build.gradle
+@@ -117,7 +117,7 @@ android {
+     productFlavors {
+         bundleAfat {
+             ndk {
+-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
++                abiFilters "arm64-v8a"
+             }
+             ext {
+                 abiVersionCode = 1
+@@ -126,7 +126,7 @@ android {
+         }
+         bundleAfat_SDK23 {
+             ndk {
+-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
++                abiFilters "arm64-v8a"
+             }
+             sourceSets.debug {
+                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
+@@ -142,7 +142,7 @@ android {
+         }
+         afat {
+             ndk {
+-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
++                abiFilters "arm64-v8a"
+             }
+             sourceSets.debug {
+                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
