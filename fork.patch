@@ -1344,7 +1344,7 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-index b779126..d19c1bd 100644
+index b779126..5c558f6 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 @@ -69,6 +69,7 @@ import org.telegram.messenger.BirthdayController;
@@ -1363,21 +1363,19 @@ index b779126..d19c1bd 100644
          contentView = new SizeNotifierFrameLayout(context) {
              @Override
              protected void dispatchDraw(Canvas canvas) {
-@@ -685,6 +687,13 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -685,6 +687,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
              items.add(UItem.asShadow(null));
          }
  
 +        if (items.get(items.size() - 1).viewType != UniversalAdapter.VIEW_TYPE_SHADOW)
 +            items.add(UItem.asShadow(null));
-+        items.add(UItem.asHeader(getString(R.string.ForkSettingsSection)));
-+        items.add(SettingCell.Factory.of(30, 0xFF4FA9F5, 0xFF2E7BD0, 0, getString(R.string.ForkPlugins)));
-+        items.add(SettingCell.Factory.of(31, 0xFF8E8E93, 0xFF636366, 0, getString(R.string.ForkLastCrash), ForkDiagnostics.summary(getParentActivity())));
++        items.add(UItem.asCustomShadow(createForkBlock()));
 +        items.add(UItem.asShadow(null));
 +
          items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
          items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
          items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
-@@ -887,7 +896,38 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -887,7 +894,122 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                  presentFragment(new RoundVideoSettingsActivity());
                  break;
              }
@@ -1390,6 +1388,90 @@ index b779126..d19c1bd 100644
 +                break;
 +            }
 +        }
++    }
++
++    /** Карточка раздела «Форк»: скруглённый фон с обводкой вместо серой подписи. */
++    private View createForkBlock() {
++        final Context context = getParentActivity();
++        final int accent = 0xFF4FA9F5;
++
++        LinearLayout card = new LinearLayout(context);
++        card.setOrientation(LinearLayout.VERTICAL);
++        GradientDrawable background = new GradientDrawable();
++        background.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider));
++        background.setCornerRadius(dp(14));
++        background.setStroke(AndroidUtilities.dp2(1.5f), 0x334FA9F5);
++        card.setBackground(background);
++
++        TextView title = new TextView(context);
++        title.setText(getString(R.string.ForkSettingsSection).toUpperCase());
++        title.setTextColor(accent);
++        title.setTextSize(13);
++        title.setTypeface(AndroidUtilities.getTypeface("sans-serif-medium"));
++        title.setLetterSpacing(0.05f);
++        title.setPadding(dp(16), dp(14), dp(16), dp(6));
++        card.addView(title, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
++
++        card.addView(createForkRow(context, 0xFF4FA9F5, 0xFF2E7BD0, R.drawable.fork_ic_plugins,
++                getString(R.string.ForkPlugins), "",
++                v -> presentSettingFragment(new ForkPluginsActivity())));
++
++        View divider = new View(context);
++        divider.setBackgroundColor(Theme.getColor(Theme.key_divider, resourceProvider));
++        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, 1);
++        dividerParams.leftMargin = dp(52);
++        dividerParams.rightMargin = dp(16);
++        dividerParams.topMargin = dp(2);
++        dividerParams.bottomMargin = dp(2);
++        card.addView(divider, dividerParams);
++
++        card.addView(createForkRow(context, 0xFF8E8E93, 0xFF636366, R.drawable.fork_ic_diag,
++                getString(R.string.ForkLastCrash), ForkDiagnostics.summary(context),
++                v -> presentForkCrashReport()));
++
++        card.setClipChildren(false);
++        return card;
++    }
++
++    private View createForkRow(Context context, int colorTop, int colorBottom, int iconRes,
++            CharSequence titleText, CharSequence valueText, View.OnClickListener listener) {
++        LinearLayout row = new LinearLayout(context);
++        row.setOrientation(LinearLayout.HORIZONTAL);
++        row.setGravity(Gravity.CENTER_VERTICAL);
++        row.setPadding(dp(16), dp(11), dp(16), dp(11));
++        row.setBackground(Theme.AdaptiveRipple.createRect(0, 0xFF4FA9F5, dp(10)));
++        row.setOnClickListener(listener);
++
++        GradientDrawable circle = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
++                new int[]{colorTop, colorBottom});
++        circle.setShape(GradientDrawable.OVAL);
++        ImageView icon = new ImageView(context);
++        icon.setBackground(circle);
++        icon.setImageResource(iconRes);
++        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
++        row.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
++
++        TextView title = new TextView(context);
++        title.setText(titleText);
++        title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
++        title.setTextSize(16);
++        title.setSingleLine(true);
++        title.setEllipsize(TextUtils.TruncateAt.END);
++        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, LayoutHelper.WRAP_CONTENT, 1f);
++        titleParams.leftMargin = dp(14);
++        row.addView(title, titleParams);
++
++        if (!TextUtils.isEmpty(valueText)) {
++            TextView value = new TextView(context);
++            value.setText(valueText);
++            value.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteValueText, resourceProvider));
++            value.setTextSize(14);
++            value.setSingleLine(true);
++            value.setMaxWidth(dp(140));
++            value.setEllipsize(TextUtils.TruncateAt.END);
++            row.addView(value, new LinearLayout.LayoutParams(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
++        }
++        return row;
 +    }
 +
 +    private void presentForkCrashReport() {
@@ -1416,15 +1498,62 @@ index b779126..d19c1bd 100644
      }
  
      private boolean onLongClick(UItem item, View view, int position, float x, float y) {
+diff --git a/TMessagesProj/src/main/res/drawable/fork_ic_diag.xml b/TMessagesProj/src/main/res/drawable/fork_ic_diag.xml
+new file mode 100644
+index 0000000..59b8086
+--- /dev/null
++++ b/TMessagesProj/src/main/res/drawable/fork_ic_diag.xml
+@@ -0,0 +1,17 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M12,3.5 L22,20.5 L2,20.5 Z"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="1.8" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M11,9h2v7h-2z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M11,17.2h2v2h-2z" />
++</vector>
+diff --git a/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml b/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml
+new file mode 100644
+index 0000000..aecf6e9
+--- /dev/null
++++ b/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml
+@@ -0,0 +1,18 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,3h8v8h-8z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M13,3h8v8h-8z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,13h8v8h-8z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M13,13h8v8h-8z" />
++</vector>
 diff --git a/TMessagesProj/src/main/res/raw/keep.xml b/TMessagesProj/src/main/res/raw/keep.xml
 new file mode 100644
-index 0000000..9d261be
+index 0000000..1cdc142
 --- /dev/null
 +++ b/TMessagesProj/src/main/res/raw/keep.xml
 @@ -0,0 +1,4 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources xmlns:tools="http://schemas.android.com/tools"
-+    tools:keep="@string/Fork*,@string/LiteOptionsAutoplayVideoWifiOnly,@string/AppName"
++    tools:keep="@string/Fork*,@string/LiteOptionsAutoplayVideoWifiOnly,@string/AppName,@drawable/fork_ic_*"
 +    tools:shrinkMode="safe" />
 diff --git a/TMessagesProj/src/main/res/values-ar/strings.xml b/TMessagesProj/src/main/res/values-ar/strings.xml
 index 8b87004..7b4c909 100644
