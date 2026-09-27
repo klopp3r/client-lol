@@ -1,5 +1,5 @@
 diff --git a/TMessagesProj/build.gradle b/TMessagesProj/build.gradle
-index 85a9f84..f914f52 100644
+index 85a9f84..c16b7c0 100644
 --- a/TMessagesProj/build.gradle
 +++ b/TMessagesProj/build.gradle
 @@ -109,6 +109,9 @@ dependencies {
@@ -7,7 +7,7 @@ index 85a9f84..f914f52 100644
      implementation 'com.google.android.recaptcha:recaptcha:18.7.1'
  
 +    // Движок JS для плагинов форка (чистая Java, без нативных библиотек).
-+    implementation 'org.mozilla:rhino:1.7.14'
++    implementation 'org.mozilla:rhino:1.7.13'
 +
      coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
  }
@@ -24,6 +24,22 @@ index 85a9f84..f914f52 100644
      sourceSets.main.jniLibs.srcDirs = ['./jni/']
  
      externalNativeBuild {
+diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
+index 6801688..da5a68e 100644
+--- a/TMessagesProj/proguard-rules.pro
++++ b/TMessagesProj/proguard-rules.pro
+@@ -53,4 +53,9 @@
+ 
+ # Use -keep to explicitly keep any other classes shrinking would remove
+ #-dontoptimize
+-#-dontobfuscate
+\ No newline at end of file
++#-dontobfuscate
++
++# Rhino: reflective Java-object introspection that does not exist on Android
++-dontwarn java.beans.**
++-dontwarn javax.lang.model.**
++-dontwarn java.lang.management.**
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 index 4ed7e64..6e4881f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
