@@ -1423,10 +1423,22 @@ index 1013bb6..323b0a9 100644
 +    <string name="ForkPluginDeleteConfirm">Delete this plugin? Its settings will be removed.</string>
  </resources>
 diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
-index ea7a853..0c008fa 100644
+index ea7a853..ecc5508 100644
 --- a/TMessagesProj_App/build.gradle
 +++ b/TMessagesProj_App/build.gradle
-@@ -93,7 +93,11 @@ android {
+@@ -45,6 +45,11 @@ android {
+     androidResources {
+         noCompress += "pack"
+         localeFilters += ["zz"]
++        // Апстрим оставляет в базовом APK только псевдолокаль zz: переводы
++        // приезжают отдельными языковыми APK из Google Play. Наш APK
++        // ставится вручную, языковых сплитов не будет, поэтому русский
++        // (и остальные переведённые нами языки) фильтр выкинул бы молча.
++        localeFilters += ["ru", "uk", "de", "es", "it", "nl", "pt-rBR", "ar", "ko"]
+     }
+ 
+     signingConfigs {
+@@ -93,7 +98,11 @@ android {
              jniDebuggable false
              signingConfig signingConfigs.release
              minifyEnabled true
@@ -1439,7 +1451,7 @@ index ea7a853..0c008fa 100644
              multiDexEnabled true
              proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
              ndk.debugSymbolLevel = 'FULL'
-@@ -117,7 +121,7 @@ android {
+@@ -117,7 +126,7 @@ android {
      productFlavors {
          bundleAfat {
              ndk {
@@ -1448,7 +1460,7 @@ index ea7a853..0c008fa 100644
              }
              ext {
                  abiVersionCode = 1
-@@ -126,7 +130,7 @@ android {
+@@ -126,7 +135,7 @@ android {
          }
          bundleAfat_SDK23 {
              ndk {
@@ -1457,7 +1469,7 @@ index ea7a853..0c008fa 100644
              }
              sourceSets.debug {
                  manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
-@@ -142,7 +146,7 @@ android {
+@@ -142,7 +151,7 @@ android {
          }
          afat {
              ndk {
