@@ -1640,14 +1640,14 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..5f9461e 100644
+index 24c5629..17ea263 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
 -    <string name="AppName">Telegram</string>
-+    <string name="AppName">Telegram Fork</string>
++    <string name="AppName">Huntergram</string>
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
@@ -1656,7 +1656,7 @@ index 24c5629..5f9461e 100644
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
 +    <string name="LiteOptionsAutoplayVideoWifiOnly">Автовоспроизведение видео только по Wi-Fi</string>
-+    <string name="ForkSettingsSection">Форк</string>
++    <string name="ForkSettingsSection">Huntergram</string>
 +    <string name="ForkPlugins">Плагины</string>
 +    <string name="ForkPluginsLoad">Загрузить плагин из файла</string>
 +    <string name="ForkPluginsEmpty">Плагинов пока нет. Нажми «Загрузить плагин из файла» и выбери файл .js или .plugin.</string>
@@ -1691,7 +1691,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..5b44292 100644
+index 1013bb6..a6b2075 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -1699,7 +1699,7 @@ index 1013bb6..5b44292 100644
 -<resources>
 -    <string name="AppName">Telegram</string>
 +<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@string/Fork*,@string/LiteOptionsAutoplayVideoWifiOnly">
-+    <string name="AppName">Telegram Fork</string>
++    <string name="AppName">Huntergram</string>
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">English</string>
      <string name="English">English</string>
@@ -1715,7 +1715,7 @@ index 1013bb6..5b44292 100644
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
-+    <string name="ForkSettingsSection">Fork</string>
++    <string name="ForkSettingsSection">Huntergram</string>
 +    <string name="ForkPlugins">Plugins</string>
 +    <string name="ForkPluginsLoad">Load plugin from file</string>
 +    <string name="ForkPluginsEmpty">No plugins installed yet. Tap \"Load plugin from file\" and pick a .js or .plugin file.</string>
