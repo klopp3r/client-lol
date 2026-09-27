@@ -1562,7 +1562,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..1b62428 100644
+index 1013bb6..5b44292 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -1589,7 +1589,7 @@ index 1013bb6..1b62428 100644
 +    <string name="ForkSettingsSection">Fork</string>
 +    <string name="ForkPlugins">Plugins</string>
 +    <string name="ForkPluginsLoad">Load plugin from file</string>
-+    <string name="ForkPluginsEmpty">No plugins installed yet. Tap "Load plugin from file" and pick a .js or .plugin file.</string>
++    <string name="ForkPluginsEmpty">No plugins installed yet. Tap \"Load plugin from file\" and pick a .js or .plugin file.</string>
 +    <string name="ForkPluginsInfo">A plugin is a JavaScript file. It runs in a sandbox and can only add its own settings here. Load plugins from sources you trust.</string>
 +    <string name="ForkPluginEnabled">Enabled</string>
 +    <string name="ForkPluginDisabled">Disabled</string>
