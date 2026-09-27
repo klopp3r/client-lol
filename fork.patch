@@ -66,6 +66,115 @@ index 4ed7e64..6e4881f 100644
  
      static {
          if (ApplicationLoader.applicationContext != null) {
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java
+new file mode 100644
+index 0000000..c7cbeaf
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java
+@@ -0,0 +1,103 @@
++package org.telegram.messenger;
++
++import android.content.Context;
++import android.content.SharedPreferences;
++import android.text.TextUtils;
++import android.util.Log;
++
++/**
++ * Простейший встроенный отчёт о падениях.
++ * <p>
++ * Форк ставится вручную, и у пользователя нет удобного способа снять logcat,
++ * поэтому текст последнего падения сохраняется рядом с настройками форка и
++ * показывается в Настройках отдельным пунктом. Если запись пустая, значит
++ * приложение упало нативно (внутри .so) либо было убито системой, — тогда
++ * обработчик не срабатывает, и это само по себе полезный сигнал.
++ */
++public class ForkDiagnostics {
++    public static final String TAG = "ForkDiagnostics";
++
++    private static final String PREFS = "fork_diagnostics";
++    private static final String KEY_ERROR = "last_error";
++    private static final String KEY_START = "last_start";
++    private static final int MAX_LENGTH = 4000;
++
++    private static boolean installed;
++
++    public static synchronized void install(Context context) {
++        final Context appContext = context.getApplicationContext();
++        prefs(appContext).edit().putLong(KEY_START, System.currentTimeMillis()).apply();
++        if (installed) {
++            return;
++        }
++        installed = true;
++        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
++        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
++            try {
++                record(appContext, throwable);
++            } catch (Throwable ignored) {
++                // Запись отчёта не должна сама что-то сломать.
++            }
++            if (previous != null) {
++                previous.uncaughtException(thread, throwable);
++            } else {
++                android.os.Process.killProcess(android.os.Process.myPid());
++            }
++        });
++    }
++
++    private static void record(Context context, Throwable throwable) {
++        String text = Log.getStackTraceString(throwable);
++        if (text.length() > MAX_LENGTH) {
++            text = text.substring(0, MAX_LENGTH);
++        }
++        prefs(context).edit().putString(KEY_ERROR, text).commit();
++    }
++
++    /** Записывает ошибку вручную, если поймать её не удалось. */
++    public static void record(Context context, String text) {
++        record(context, new RuntimeException(text));
++    }
++
++    public static String getLastError(Context context) {
++        return prefs(context).getString(KEY_ERROR, "");
++    }
++
++    public static long getLastStart(Context context) {
++        return prefs(context).getLong(KEY_START, 0);
++    }
++
++    public static void clear(Context context) {
++        prefs(context).edit().remove(KEY_ERROR).apply();
++    }
++
++    private static SharedPreferences prefs(Context context) {
++        return (context.getApplicationContext() != null ? context.getApplicationContext() : context).getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++    }
++
++    /** Человекочитаемая сводка для строки настроек. */
++    public static String summary(Context context) {
++        if (context == null) {
++            return "";
++        }
++        String error = getLastError(context);
++        if (!TextUtils.isEmpty(error)) {
++            return shortReason(error);
++        }
++        long start = getLastStart(context);
++        if (start <= 0) {
++            return "";
++        }
++        return android.text.format.DateFormat.getTimeFormat(context)
++                .format(new java.util.Date(start));
++    }
++
++    private static String shortReason(String error) {
++        int newline = error.indexOf('\n');
++        String first = newline > 0 ? error.substring(0, newline) : error;
++        if (first.length() > 60) {
++            first = first.substring(0, 60) + "…";
++        }
++        return first;
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java
 new file mode 100644
 index 0000000..2a162c0
@@ -1235,10 +1344,26 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-index b779126..3f61dd8 100644
+index b779126..d19c1bd 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-@@ -685,6 +685,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -69,6 +69,7 @@ import org.telegram.messenger.BirthdayController;
+ import org.telegram.messenger.BuildVars;
+ import org.telegram.messenger.ChatThemeController;
+ import org.telegram.messenger.Emoji;
++import org.telegram.messenger.ForkDiagnostics;
+ import org.telegram.messenger.FileLoader;
+ import org.telegram.messenger.FileLog;
+ import org.telegram.messenger.ImageLoader;
+@@ -227,6 +228,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+ 
+     @Override
+     public View createView(Context context) {
++        ForkDiagnostics.install(context);
+         contentView = new SizeNotifierFrameLayout(context) {
+             @Override
+             protected void dispatchDraw(Canvas canvas) {
+@@ -685,6 +687,13 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
              items.add(UItem.asShadow(null));
          }
  
@@ -1246,12 +1371,13 @@ index b779126..3f61dd8 100644
 +            items.add(UItem.asShadow(null));
 +        items.add(UItem.asHeader(getString(R.string.ForkSettingsSection)));
 +        items.add(SettingCell.Factory.of(30, 0xFF4FA9F5, 0xFF2E7BD0, 0, getString(R.string.ForkPlugins)));
++        items.add(SettingCell.Factory.of(31, 0xFF8E8E93, 0xFF636366, 0, getString(R.string.ForkLastCrash), ForkDiagnostics.summary(getParentActivity())));
 +        items.add(UItem.asShadow(null));
 +
          items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
          items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
          items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
-@@ -887,6 +893,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -887,7 +896,38 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                  presentFragment(new RoundVideoSettingsActivity());
                  break;
              }
@@ -1259,9 +1385,37 @@ index b779126..3f61dd8 100644
 +                presentSettingFragment(new ForkPluginsActivity());
 +                break;
 +            }
++            case 31: {
++                presentForkCrashReport();
++                break;
++            }
++        }
++    }
++
++    private void presentForkCrashReport() {
++        final String error = ForkDiagnostics.getLastError(this);
++        final long start = ForkDiagnostics.getLastStart(this);
++        String time = "-";
++        if (start > 0) {
++            time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
++                    .format(new java.util.Date(start));
++        }
++        StringBuilder builder = new StringBuilder();
++        builder.append(getString(R.string.ForkLastLaunch)).append(": ").append(time);
++        if (!TextUtils.isEmpty(error)) {
++            builder.append("\n\n").append(error);
++        } else {
++            builder.append("\n\n").append(getString(R.string.ForkNoCrash));
          }
++        new AlertDialog.Builder(getParentActivity(), resourceProvider)
++            .setTitle(R.string.ForkCrashReport)
++            .setMessage(builder.toString())
++            .setPositiveButton(R.string.OK, null)
++            .setNeutralButton(R.string.ForkClearReport, (dialog, which) -> ForkDiagnostics.clear(this))
++            .show();
      }
  
+     private boolean onLongClick(UItem item, View view, int position, float x, float y) {
 diff --git a/TMessagesProj/src/main/res/raw/keep.xml b/TMessagesProj/src/main/res/raw/keep.xml
 new file mode 100644
 index 0000000..9d261be
@@ -1357,7 +1511,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..0a7ecac 100644
+index 24c5629..5f9461e 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -1368,7 +1522,7 @@ index 24c5629..0a7ecac 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,20 @@
+@@ -263,4 +263,25 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -1388,6 +1542,11 @@ index 24c5629..0a7ecac 100644
 +    <string name="ForkPluginNoSettings">Плагин не добавил настроек.</string>
 +    <string name="ForkPluginDelete">Удалить плагин</string>
 +    <string name="ForkPluginDeleteConfirm">Удалить этот плагин? Его настройки будут сброшены.</string>
++    <string name="ForkLastCrash">Последнее падение</string>
++    <string name="ForkCrashReport">Отчёт о падении</string>
++    <string name="ForkLastLaunch">Последний запуск</string>
++    <string name="ForkNoCrash">Ничего не записано. Если приложение закрывается, а эта запись остаётся пустой, значит падение произошло внутри нативной библиотеки и перехватить его не удалось.</string>
++    <string name="ForkClearReport">Очистить</string>
  </resources>
 \ No newline at end of file
 diff --git a/TMessagesProj/src/main/res/values-uk/strings.xml b/TMessagesProj/src/main/res/values-uk/strings.xml
@@ -1403,7 +1562,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..734aad7 100644
+index 1013bb6..1b62428 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -1423,7 +1582,7 @@ index 1013bb6..734aad7 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,19 @@
+@@ -11235,4 +11236,24 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -1442,6 +1601,11 @@ index 1013bb6..734aad7 100644
 +    <string name="ForkPluginNoSettings">This plugin did not add any settings.</string>
 +    <string name="ForkPluginDelete">Delete plugin</string>
 +    <string name="ForkPluginDeleteConfirm">Delete this plugin? Its settings will be removed.</string>
++    <string name="ForkLastCrash">Last crash</string>
++    <string name="ForkCrashReport">Crash report</string>
++    <string name="ForkLastLaunch">Last launch</string>
++    <string name="ForkNoCrash">Nothing recorded. If the app closes and this entry stays empty, the crash happened inside a native library and could not be caught.</string>
++    <string name="ForkClearReport">Clear</string>
  </resources>
 diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
 index ea7a853..ecc5508 100644
