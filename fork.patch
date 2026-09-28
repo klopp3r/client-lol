@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..abd4095 100644
+index 6801688..a78db07 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,28 @@
+@@ -53,4 +53,29 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -59,6 +59,59 @@ index 6801688..abd4095 100644
 +-keep class org.telegram.messenger.ForkDiagnostics { *; }
 +-keep class org.telegram.ui.ForkPluginsActivity { *; }
 +-keep class org.telegram.ui.ForkPluginSettingsActivity { *; }
++-keep class org.telegram.ui.ForkPluginInstallActivity { *; }
+diff --git a/TMessagesProj/src/main/AndroidManifest.xml b/TMessagesProj/src/main/AndroidManifest.xml
+index 6f6d377..cdc3d53 100644
+--- a/TMessagesProj/src/main/AndroidManifest.xml
++++ b/TMessagesProj/src/main/AndroidManifest.xml
+@@ -691,6 +691,47 @@
+             android:value="5" />
+         -->
+ 
++        <activity
++            android:name="org.telegram.ui.ForkPluginInstallActivity"
++            android:theme="@android:style/Theme.Translucent.NoTitleBar"
++            android:excludeFromRecents="true"
++            android:noHistory="true"
++            android:launchMode="singleTop"
++            android:exported="true">
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="content" />
++                <data android:scheme="file" />
++                <data android:mimeType="text/javascript" />
++                <data android:mimeType="application/javascript" />
++                <data android:mimeType="application/x-javascript" />
++                <data android:mimeType="text/x-javascript" />
++            </intent-filter>
++            <!-- Файловые менеджеры не знают тип .plugin и отдают octet-stream,
++                 поэтому фильтр сужаем по имени файла. -->
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="content" />
++                <data android:scheme="file" />
++                <data android:mimeType="application/octet-stream" />
++                <data android:pathPattern=".*\.plugin" />
++            </intent-filter>
++            <!-- Менеджеры, которые не передают тип вообще. -->
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="content" />
++                <data android:scheme="file" />
++                <data android:pathPattern=".*\.plugin" />
++                <data android:pathPattern=".*\.js" />
++            </intent-filter>
++        </activity>
++
+         <meta-data android:name="com.google.android.gms.vision.DEPENDENCIES" android:value="face,barcode" />
+ 
+         <meta-data android:name="android.max_aspect" android:value="2.5" />
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 index 4ed7e64..6e4881f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
@@ -915,6 +968,85 @@ index 39f493f..33534fb 100644
      }
  
      public static boolean isAutoplayGifs() {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginInstallActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginInstallActivity.java
+new file mode 100644
+index 0000000..855e727
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginInstallActivity.java
+@@ -0,0 +1,73 @@
++package org.telegram.ui;
++
++import android.app.Activity;
++import android.content.Intent;
++import android.net.Uri;
++import android.os.Bundle;
++import android.widget.Toast;
++
++import org.telegram.messenger.AndroidUtilities;
++import org.telegram.messenger.ForkPlugin;
++import org.telegram.messenger.ForkPluginManager;
++import org.telegram.messenger.LocaleController;
++import org.telegram.messenger.R;
++
++/**
++ * Точка входа для «Открыть с помощью»: файлы .js и .plugin, выбранные в
++ * файловом менеджере или браузере, устанавливаются сразу, без ручного
++ * выбора через системный выбор файла. Активность прозрачная — пользователь
++ * видит только подтверждение и открытое приложение.
++ */
++public class ForkPluginInstallActivity extends Activity {
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++
++        Intent intent = getIntent();
++        final Uri uri = intent == null ? null : intent.getData();
++        if (uri == null) {
++            finish();
++            return;
++        }
++
++        new Thread(() -> {
++            String message = null;
++            String name = null;
++            try {
++                ForkPlugin plugin = ForkPluginManager.getInstance().install(this, uri);
++                name = plugin != null ? plugin.name : null;
++            } catch (Throwable t) {
++                message = t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
++            }
++            final String pluginName = name;
++            final String error = message;
++            AndroidUtilities.runOnUIThread(() -> {
++                if (error != null) {
++                    showToast(getString(R.string.ForkPluginInstallError, error));
++                } else {
++                    showToast(getString(R.string.ForkPluginInstallOk, pluginName != null ? pluginName : ""));
++                }
++                openApp();
++            });
++        }).start();
++    }
++
++    private void showToast(String text) {
++        try {
++            Toast.makeText(this, text, Toast.LENGTH_LONG).show();
++        } catch (Throwable ignored) {
++        }
++    }
++
++    private void openApp() {
++        try {
++            Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
++            if (launch != null) {
++                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++                startActivity(launch);
++            }
++        } catch (Throwable ignored) {
++        }
++        finish();
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginSettingsActivity.java
 new file mode 100644
 index 0000000..de6892e
@@ -1793,7 +1925,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..3bfe6f0 100644
+index 24c5629..9562b45 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -1804,7 +1936,7 @@ index 24c5629..3bfe6f0 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,27 @@
+@@ -263,4 +263,29 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -1822,6 +1954,8 @@ index 24c5629..3bfe6f0 100644
 +    <string name="ForkPluginOff">Выкл</string>
 +    <string name="ForkPluginRun">Запустить</string>
 +    <string name="ForkPluginInstalled">Плагин установлен.</string>
++    <string name="ForkPluginInstallOk">Плагин %1$s установлен</string>
++    <string name="ForkPluginInstallError">Не удалось установить плагин: %1$s</string>
 +    <string name="ForkPluginError">Ошибка</string>
 +    <string name="ForkPluginNoSettings">Плагин не добавил настроек.</string>
 +    <string name="ForkPluginDelete">Удалить плагин</string>
@@ -1846,7 +1980,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..cc5a170 100644
+index 1013bb6..d576473 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -1866,7 +2000,7 @@ index 1013bb6..cc5a170 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,26 @@
+@@ -11235,4 +11236,28 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -1883,6 +2017,8 @@ index 1013bb6..cc5a170 100644
 +    <string name="ForkPluginOff">Off</string>
 +    <string name="ForkPluginRun">Run</string>
 +    <string name="ForkPluginInstalled">Plugin installed.</string>
++    <string name="ForkPluginInstallOk">Plugin %1$s installed</string>
++    <string name="ForkPluginInstallError">Could not install the plugin: %1$s</string>
 +    <string name="ForkPluginError">Error</string>
 +    <string name="ForkPluginNoSettings">This plugin did not add any settings.</string>
 +    <string name="ForkPluginDelete">Delete plugin</string>
