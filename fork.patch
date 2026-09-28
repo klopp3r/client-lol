@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..5275bb7 100644
+index 6801688..8bb3cdf 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,33 @@
+@@ -53,4 +53,34 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -64,6 +64,7 @@ index 6801688..5275bb7 100644
 +-keep class org.telegram.ui.ForkGhostActivity { *; }
 +-keep class org.telegram.messenger.ForkTuning { *; }
 +-keep class org.telegram.ui.ForkMainSettingsActivity { *; }
++-keep class org.telegram.ui.ForkAnimationActivity { *; }
 diff --git a/TMessagesProj/src/main/AndroidManifest.xml b/TMessagesProj/src/main/AndroidManifest.xml
 index 6f6d377..cdc3d53 100644
 --- a/TMessagesProj/src/main/AndroidManifest.xml
@@ -137,14 +138,15 @@ index 083d15e..f90427d 100644
              if (view == null || view.getContext() == null) return;
              if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-index 5405be7..0ac6638 100644
+index 5405be7..5a4d322 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-@@ -282,6 +282,7 @@ public class ApplicationLoader extends Application {
+@@ -282,6 +282,8 @@ public class ApplicationLoader extends Application {
      @Override
      public void onCreate() {
          applicationLoaderInstance = this;
 +        ForkGhost.init(this);
++        ForkTuning.applyAnimationSettings();
          try {
              applicationContext = getApplicationContext();
          } catch (Throwable ignore) {
@@ -1157,10 +1159,10 @@ index 0000000..1274aa5
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
 new file mode 100644
-index 0000000..b475fed
+index 0000000..d8c379c
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,108 @@
 +package org.telegram.messenger;
 +
 +/**
@@ -1173,6 +1175,7 @@ index 0000000..b475fed
 +    private static final String KEY_NO_ROUND = "no_round_numbers";
 +    private static final String KEY_SECONDS = "show_seconds";
 +    private static final String KEY_VIBRATION = "vibration";
++    private static final String KEY_ANIMATION = "animation_speed";
 +
 +    private static boolean read(String key, boolean def) {
 +        try {
@@ -1217,6 +1220,55 @@ index 0000000..b475fed
 +
 +    public static void setVibration(boolean value) {
 +        write(KEY_VIBRATION, value);
++    }
++
++    public static final int ANIM_SYSTEM = 0;
++    public static final int ANIM_SLOW = 1;
++    public static final int ANIM_NORMAL = 2;
++    public static final int ANIM_FAST = 3;
++    public static final int ANIM_OFF = 4;
++
++    /** Скорость анимаций: как в системе / медленно / обычно / быстро / выкл. */
++    public static int animationSpeed() {
++        try {
++            return ApplicationLoader.applicationContext
++                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                    .getInt(KEY_ANIMATION, ANIM_SYSTEM);
++        } catch (Throwable ignore) {
++            return ANIM_SYSTEM;
++        }
++    }
++
++    public static void setAnimationSpeed(int value) {
++        ApplicationLoader.applicationContext
++                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                .edit()
++                .putInt(KEY_ANIMATION, value)
++                .apply();
++        applyAnimationSettings();
++    }
++
++    /**
++     * Множитель для анимаций всего процесса. «Как в системе» (0) означает
++     * не трогать настройки Android — в том числе режим анимаций для
++     * доступности и «отключить анимации» в настройках разработчика.
++     */
++    public static float animationScale() {
++        switch (animationSpeed()) {
++            case ANIM_SLOW: return 1.5f;
++            case ANIM_NORMAL: return 1.0f;
++            case ANIM_FAST: return 0.6f;
++            case ANIM_OFF: return 0.0f;
++            default: return -1f;
++        }
++    }
++
++    /** Применяем сразу, чтобы переключатель был виден в действии. */
++    public static void applyAnimationSettings() {
++        try {
++            android.animation.ValueAnimator.setDurationScale(animationScale());
++        } catch (Throwable ignore) {
++        }
 +    }
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java b/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
@@ -1334,12 +1386,204 @@ index 39f493f..33534fb 100644
      }
  
      public static boolean isAutoplayGifs() {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+index ee6b470..35159ae 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+@@ -60,6 +60,7 @@ import androidx.core.graphics.ColorUtils;
+ import androidx.core.util.Consumer;
+ import androidx.recyclerview.widget.DiffUtil;
+ import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.DefaultItemAnimator;
+ import androidx.recyclerview.widget.RecyclerView;
+ 
+ import org.telegram.messenger.AndroidUtilities;
+@@ -68,6 +69,7 @@ import org.telegram.messenger.FileLog;
+ import org.telegram.messenger.GenericProvider;
+ import org.telegram.messenger.LocaleController;
+ import org.telegram.messenger.NotificationCenter;
++import org.telegram.messenger.ForkTuning;
+ import org.telegram.messenger.R;
+ import org.telegram.messenger.SharedConfig;
+ import org.telegram.messenger.Utilities;
+@@ -1476,6 +1478,8 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
+         this.edgeEffectTrackerFactory = new EdgeEffectTrackerFactory();
+ 
+         setEdgeEffectFactory(edgeEffectTrackerFactory);
++        // Плавные и быстрые переходы строк во всех списках приложения.
++        tuneItemAnimator(getItemAnimator());
+         setGlowColor(getThemedColor(Theme.key_actionBarDefault));
+         selectorDrawable = Theme.getSelectorDrawable(getThemedColor(Theme.key_listSelector), false);
+         selectorDrawable.setCallback(this);
+@@ -3358,8 +3362,29 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
+     }
+ 
+     @Override
++    /** Длительности зависят от настройки «Скорость анимаций». */
++    private void tuneItemAnimator(ItemAnimator animator) {
++        if (!(animator instanceof DefaultItemAnimator)) {
++            return;
++        }
++        int add, remove, move, change;
++        switch (ForkTuning.animationSpeed()) {
++            case ForkTuning.ANIM_SLOW: add = 250; remove = 250; move = 300; change = 250; break;
++            case ForkTuning.ANIM_FAST: add = 90; remove = 90; move = 120; change = 90; break;
++            case ForkTuning.ANIM_OFF: add = 0; remove = 0; move = 0; change = 0; break;
++            default: add = 150; remove = 150; move = 200; change = 150; break;
++        }
++        DefaultItemAnimator def = (DefaultItemAnimator) animator;
++        def.setAddDuration(add);
++        def.setRemoveDuration(remove);
++        def.setMoveDuration(move);
++        def.setChangeDuration(change);
++        def.setSupportsChangeAnimations(false);
++    }
++
+     public void setItemAnimator(@Nullable ItemAnimator animator) {
+         super.setItemAnimator(animator);
++        tuneItemAnimator(animator);
+ //        if (hasSections() && getItemAnimator() != null) {
+ //            getItemAnimator().listenToAnimationUpdates(this::invalidate);
+ //        }
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java
+new file mode 100644
+index 0000000..785a62b
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java
+@@ -0,0 +1,127 @@
++package org.telegram.ui;
++
++import android.content.Context;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++
++import org.telegram.messenger.ForkTuning;
++import org.telegram.messenger.LocaleController;
++import org.telegram.messenger.R;
++import org.telegram.ui.ActionBar.ActionBar;
++import org.telegram.ui.ActionBar.BaseFragment;
++import org.telegram.ui.ActionBar.Theme;
++import org.telegram.ui.Cells.TextCheckCell;
++import org.telegram.ui.Cells.TextInfoPrivacyCell;
++import org.telegram.ui.Components.LayoutHelper;
++import org.telegram.ui.Components.RecyclerListView;
++
++/**
++ * Выбор скорости анимаций. Значение применяется мгновенно: меняются
++ * множитель анимаций всего приложения и длительности переходов в списках.
++ */
++public class ForkAnimationActivity extends BaseFragment {
++    private static final int TYPE_OPTION = 0;
++    private static final int TYPE_INFO = 1;
++
++    private static final int[] MODES = {
++            ForkTuning.ANIM_SYSTEM,
++            ForkTuning.ANIM_SLOW,
++            ForkTuning.ANIM_NORMAL,
++            ForkTuning.ANIM_FAST,
++            ForkTuning.ANIM_OFF,
++    };
++
++    private RecyclerListView listView;
++    private ListAdapter adapter;
++
++    @Override
++    public View createView(Context context) {
++        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
++        actionBar.setTitle(LocaleController.getString(R.string.ForkAnimationSpeed));
++        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
++            @Override
++            public void onItemClick(int id) {
++                if (id == -1) {
++                    finishFragment();
++                }
++            }
++        });
++
++        FrameLayout frameLayout = new FrameLayout(context);
++        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
++        fragmentView = frameLayout;
++
++        listView = new RecyclerListView(context);
++        actionBar.setAdaptiveBackground(listView);
++        listView.setLayoutManager(new LinearLayoutManager(context));
++        listView.setVerticalScrollBarEnabled(false);
++        listView.setAdapter(adapter = new ListAdapter(context));
++        listView.setOnItemClickListener((v, position) -> {
++            if (position >= 0 && position < MODES.length) {
++                ForkTuning.setAnimationSpeed(MODES[position]);
++                adapter.notifyDataSetChanged();
++            }
++        });
++        frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
++
++        return fragmentView;
++    }
++
++    private CharSequence title(int position) {
++        switch (MODES[position]) {
++            case ForkTuning.ANIM_SLOW: return LocaleController.getString(R.string.ForkAnimationSlow);
++            case ForkTuning.ANIM_NORMAL: return LocaleController.getString(R.string.ForkAnimationNormal);
++            case ForkTuning.ANIM_FAST: return LocaleController.getString(R.string.ForkAnimationFast);
++            case ForkTuning.ANIM_OFF: return LocaleController.getString(R.string.ForkAnimationOff);
++            default: return LocaleController.getString(R.string.ForkAnimationSystem);
++        }
++    }
++
++    private class ListAdapter extends RecyclerListView.SelectionAdapter {
++        private final Context context;
++
++        private ListAdapter(Context context) {
++            this.context = context;
++        }
++
++        @Override
++        public int getItemCount() {
++            return MODES.length + 1;
++        }
++
++        @NonNull
++        @Override
++        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++            View item;
++            if (viewType == TYPE_OPTION) {
++                item = new TextCheckCell(context);
++            } else {
++                item = new TextInfoPrivacyCell(context);
++            }
++            item.setLayoutParams(new RecyclerView.LayoutParams(
++                    RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++            return new RecyclerListView.Holder(item);
++        }
++
++        @Override
++        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
++            if (position == MODES.length) {
++                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
++                cell.setText(LocaleController.getString(R.string.ForkAnimationInfo));
++                return;
++            }
++            TextCheckCell cell = (TextCheckCell) holder.itemView;
++            cell.setTextAndCheck(title(position), ForkTuning.animationSpeed() == MODES[position], position != MODES.length - 1);
++        }
++
++        @Override
++        public int getItemViewType(int position) {
++            return position == MODES.length ? TYPE_INFO : TYPE_OPTION;
++        }
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
 new file mode 100644
-index 0000000..a3f779c
+index 0000000..88a03cd
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,226 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -1422,7 +1666,9 @@ index 0000000..a3f779c
 +    private void refresh() {
 +        enabled = ForkGhost.isEnabled();
 +        if (adapter != null) {
-+            adapter.notifyDataSetChanged();
++            // notifyItemRangeChanged запускает анимацию изменения строк,
++            // а notifyDataSetChanged перерисовывает всё без перехода.
++            adapter.notifyItemRangeChanged(0, adapter.getItemCount());
 +        }
 +    }
 +
@@ -1566,10 +1812,10 @@ index 0000000..a3f779c
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java
 new file mode 100644
-index 0000000..0d156b1
+index 0000000..4d7c60c
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,214 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -1601,12 +1847,14 @@ index 0000000..0d156b1
 + */
 +public class ForkMainSettingsActivity extends BaseFragment {
 +    private static final int TYPE_SWITCH = 0;
-+    private static final int TYPE_INFO = 1;
++    private static final int TYPE_VALUE = 1;
++    private static final int TYPE_INFO = 2;
 +
 +    private static final int ROW_NO_ROUND = 0;
 +    private static final int ROW_SECONDS = 1;
 +    private static final int ROW_VIBRATION = 2;
-+    private static final int ROW_COUNT = 3;
++    private static final int ROW_ANIMATION = 3;
++    private static final int ROW_COUNT = 4;
 +
 +    private RecyclerListView listView;
 +    private ListAdapter adapter;
@@ -1633,6 +1881,11 @@ index 0000000..0d156b1
 +        listView.setLayoutManager(new LinearLayoutManager(context));
 +        listView.setVerticalScrollBarEnabled(false);
 +        listView.setAdapter(adapter = new ListAdapter(context));
++        listView.setOnItemClickListener((v, position) -> {
++            if (position == ROW_ANIMATION) {
++                presentFragment(new ForkAnimationActivity());
++            }
++        });
 +        frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 +
 +        return fragmentView;
@@ -1643,6 +1896,16 @@ index 0000000..0d156b1
 +        super.onResume();
 +        if (adapter != null) {
 +            adapter.notifyDataSetChanged();
++        }
++    }
++
++    private CharSequence animationTitle() {
++        switch (ForkTuning.animationSpeed()) {
++            case ForkTuning.ANIM_SLOW: return LocaleController.getString(R.string.ForkAnimationSlow);
++            case ForkTuning.ANIM_NORMAL: return LocaleController.getString(R.string.ForkAnimationNormal);
++            case ForkTuning.ANIM_FAST: return LocaleController.getString(R.string.ForkAnimationFast);
++            case ForkTuning.ANIM_OFF: return LocaleController.getString(R.string.ForkAnimationOff);
++            default: return LocaleController.getString(R.string.ForkAnimationSystem);
 +        }
 +    }
 +
@@ -1705,7 +1968,11 @@ index 0000000..0d156b1
 +        @Override
 +        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
 +            View item;
-+            if (viewType == TYPE_SWITCH) {
++            if (viewType == TYPE_VALUE) {
++                TextSettingsCell cell = new TextSettingsCell(context);
++                cell.setCanDisable(false);
++                item = cell;
++            } else if (viewType == TYPE_SWITCH) {
 +                FrameLayout container = new FrameLayout(context);
 +                TextSettingsCell cell = new TextSettingsCell(context);
 +                cell.setCanDisable(false);
@@ -1736,6 +2003,11 @@ index 0000000..0d156b1
 +                cell.setText(LocaleController.getString(R.string.ForkMainInfo));
 +                return;
 +            }
++            if (position == ROW_ANIMATION) {
++                TextSettingsCell cell = (TextSettingsCell) holder.itemView;
++                cell.setTextAndValue(LocaleController.getString(R.string.ForkAnimationSpeed), animationTitle(), false);
++                return;
++            }
 +            SwitchHolder switchHolder = (SwitchHolder) holder;
 +            ((TextSettingsCell) ((FrameLayout) holder.itemView).getChildAt(0)).setText(title(position), true);
 +            // Состояние выставляем до слушателя, иначе recycled-ячейка
@@ -1751,7 +2023,10 @@ index 0000000..0d156b1
 +
 +        @Override
 +        public int getItemViewType(int position) {
-+            return position == ROW_COUNT ? TYPE_INFO : TYPE_SWITCH;
++            if (position == ROW_COUNT) {
++                return TYPE_INFO;
++            }
++            return position == ROW_ANIMATION ? TYPE_VALUE : TYPE_SWITCH;
 +        }
 +    }
 +}
@@ -2122,10 +2397,10 @@ index 0000000..de6892e
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
 new file mode 100644
-index 0000000..a8c778d
+index 0000000..0db6e23
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,290 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -2211,12 +2486,26 @@ index 0000000..a8c778d
 +
 +    private void update() {
 +        systemEnabled = ForkPluginManager.isSystemEnabled();
++        int previous = adapter == null ? -1 : adapter.getItemCount();
++        int previousPlugins = adapter == null ? 0 : plugins.size();
 +        plugins.clear();
 +        if (systemEnabled) {
 +            plugins.addAll(ForkPluginManager.getInstance().loadPlugins());
 +        }
-+        if (adapter != null) {
-+            adapter.notifyDataSetChanged();
++        if (adapter == null) {
++            return;
++        }
++        // Оповещаем точечно, чтобы строки плавно появлялись и исчезали,
++        // а не перерисовывались разом.
++        int current = adapter.getItemCount();
++        int delta = current - previous;
++        if (delta > 0) {
++            adapter.notifyItemRangeInserted(Math.max(0, current - 1 - delta), delta);
++        } else if (delta < 0) {
++            adapter.notifyItemRangeRemoved(Math.max(0, current - 1), -delta);
++        }
++        if (plugins.size() != previousPlugins || delta == 0) {
++            adapter.notifyItemRangeChanged(0, current);
 +        }
 +    }
 +
@@ -2810,7 +3099,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..ef5d2a0 100644
+index 24c5629..26aa146 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -2821,7 +3110,7 @@ index 24c5629..ef5d2a0 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,46 @@
+@@ -263,4 +263,53 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -2863,6 +3152,13 @@ index 24c5629..ef5d2a0 100644
 +    <string name="ForkMainVibration">Вибрация в приложении</string>
 +    <string name="ForkMainInfo">Числа показываются точно, без округления до 1.2K. Время в сообщениях выводится с секундами. Вибрация — это отклик на нажатия внутри приложения, звуки уведомлений не затрагиваются.</string>
 +    <string name="ForkMainPlaceholder">Основные</string>
++    <string name="ForkAnimationSpeed">Скорость анимаций</string>
++    <string name="ForkAnimationSystem">Как в системе</string>
++    <string name="ForkAnimationSlow">Медленно</string>
++    <string name="ForkAnimationNormal">Обычно</string>
++    <string name="ForkAnimationFast">Быстро</string>
++    <string name="ForkAnimationOff">Выключены</string>
++    <string name="ForkAnimationInfo">Скорость применяется ко всему приложению: переходы между экранами, появление и исчездание строк в списках, открытие и закрытие разделов настроек.</string>
 +    <string name="ForkCrashReport">Отчёт о падении</string>
 +    <string name="ForkLastLaunch">Последний запуск</string>
 +    <string name="ForkNoCrash">Ничего не записано. Если приложение закрывается, а эта запись остаётся пустой, значит падение произошло внутри нативной библиотеки и перехватить его не удалось.</string>
@@ -2882,7 +3178,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..55c9eb5 100644
+index 1013bb6..a43f567 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -2902,7 +3198,7 @@ index 1013bb6..55c9eb5 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,45 @@
+@@ -11235,4 +11236,52 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -2943,6 +3239,13 @@ index 1013bb6..55c9eb5 100644
 +    <string name="ForkMainVibration">Vibration in app</string>
 +    <string name="ForkMainInfo">Numbers are shown exactly, without rounding to 1.2K. The time in messages includes seconds. Vibration is the response to taps inside the app; notification sounds are not affected.</string>
 +    <string name="ForkMainPlaceholder">Main</string>
++    <string name="ForkAnimationSpeed">Animation speed</string>
++    <string name="ForkAnimationSystem">As in system</string>
++    <string name="ForkAnimationSlow">Slow</string>
++    <string name="ForkAnimationNormal">Normal</string>
++    <string name="ForkAnimationFast">Fast</string>
++    <string name="ForkAnimationOff">Off</string>
++    <string name="ForkAnimationInfo">The speed applies to the whole app: screen transitions, list rows appearing and disappearing, and the opening and closing of settings sections.</string>
 +    <string name="ForkCrashReport">Crash report</string>
 +    <string name="ForkLastLaunch">Last launch</string>
 +    <string name="ForkNoCrash">Nothing recorded. If the app closes and this entry stays empty, the crash happened inside a native library and could not be caught.</string>
