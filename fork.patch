@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..5af8f8d 100644
+index 6801688..5275bb7 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,31 @@
+@@ -53,4 +53,33 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -62,6 +62,8 @@ index 6801688..5af8f8d 100644
 +-keep class org.telegram.ui.ForkPluginInstallActivity { *; }
 +-keep class org.telegram.messenger.ForkGhost { *; }
 +-keep class org.telegram.ui.ForkGhostActivity { *; }
++-keep class org.telegram.messenger.ForkTuning { *; }
++-keep class org.telegram.ui.ForkMainSettingsActivity { *; }
 diff --git a/TMessagesProj/src/main/AndroidManifest.xml b/TMessagesProj/src/main/AndroidManifest.xml
 index 6f6d377..cdc3d53 100644
 --- a/TMessagesProj/src/main/AndroidManifest.xml
@@ -114,6 +116,26 @@ index 6f6d377..cdc3d53 100644
          <meta-data android:name="com.google.android.gms.vision.DEPENDENCIES" android:value="face,barcode" />
  
          <meta-data android:name="android.max_aspect" android:value="2.5" />
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java b/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
+index 083d15e..f90427d 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
+@@ -6483,6 +6483,7 @@ public class AndroidUtilities {
+     }
+ 
+     public static void vibrateCursor(View view) {
++        if (!ForkTuning.vibration()) return;
+         try {
+             if (view == null || view.getContext() == null) return;
+             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+@@ -6492,6 +6493,7 @@ public class AndroidUtilities {
+     }
+ 
+     public static void vibrate(View view) {
++        if (!ForkTuning.vibration()) return;
+         try {
+             if (view == null || view.getContext() == null) return;
+             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
 index 5405be7..0ac6638 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
@@ -1133,6 +1155,70 @@ index 0000000..1274aa5
 +        return name + ": " + message;
 +    }
 +}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
+new file mode 100644
+index 0000000..b475fed
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
+@@ -0,0 +1,58 @@
++package org.telegram.messenger;
++
++/**
++ * Переключатели раздела «Основные». Значения читаются прямо из настроек,
++ * чтобы изменения применялись сразу, без кэша и перезапуска.
++ */
++public class ForkTuning {
++    private static final String PREFS = "fork_tuning";
++
++    private static final String KEY_NO_ROUND = "no_round_numbers";
++    private static final String KEY_SECONDS = "show_seconds";
++    private static final String KEY_VIBRATION = "vibration";
++
++    private static boolean read(String key, boolean def) {
++        try {
++            return ApplicationLoader.applicationContext
++                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                    .getBoolean(key, def);
++        } catch (Throwable ignore) {
++            return def;
++        }
++    }
++
++    private static void write(String key, boolean value) {
++        ApplicationLoader.applicationContext
++                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                .edit()
++                .putBoolean(key, value)
++                .apply();
++    }
++
++    /** 1234 показываем как «1234», а не «1.2K». */
++    public static boolean noRoundNumbers() {
++        return read(KEY_NO_ROUND, false);
++    }
++
++    public static void setNoRoundNumbers(boolean value) {
++        write(KEY_NO_ROUND, value);
++    }
++
++    /** Время с секундами: 12:34:56 вместо 12:34. */
++    public static boolean showSeconds() {
++        return read(KEY_SECONDS, false);
++    }
++
++    public static void setShowSeconds(boolean value) {
++        write(KEY_SECONDS, value);
++    }
++
++    /** Вибрация от нажатий внутри приложения. */
++    public static boolean vibration() {
++        return read(KEY_VIBRATION, true);
++    }
++
++    public static void setVibration(boolean value) {
++        write(KEY_VIBRATION, value);
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java b/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
 index 6c37252..1ff451f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java
@@ -1145,6 +1231,35 @@ index 6c37252..1ff451f 100644
  
      public static int PRESET_LOW = (
          FLAG_ANIMATED_EMOJI_CHAT_PREMIUM |
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java b/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java
+index 245a5ab..75d694c 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java
+@@ -78,6 +78,10 @@ public class LocaleController {
+ 
+     private volatile FastDateFormat formatterDay;
+     public FastDateFormat getFormatterDay() {
++        // «Показывать секунды»: HH:mm:ss вместо HH:mm.
++        if (ForkTuning.showSeconds() && formatterDayWithSeconds != null) {
++            return formatterDayWithSeconds;
++        }
+         if (formatterDay == null) {
+             synchronized (this) {
+                 if (formatterDay == null) {
+@@ -2856,6 +2860,13 @@ public class LocaleController {
+     }
+ 
+     public static String formatShortNumber(int number, int[] rounded) {
++        // «Не округлять числа»: показываем точное значение.
++        if (ForkTuning.noRoundNumbers()) {
++            if (rounded != null) {
++                rounded[0] = number;
++            }
++            return String.valueOf(number);
++        }
+         StringBuilder K = new StringBuilder();
+         int lastDec = 0;
+         int KCount = 0;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 index 7a0b35b..adc1b85 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
@@ -1435,6 +1550,197 @@ index 0000000..a3f779c
 +            switchHolder.toggle.setChecked(checked(position));
 +            switchHolder.toggle.setEnabled(enabled || position == ROW_ENABLED);
 +            switchHolder.toggle.setAlpha(enabled || position == ROW_ENABLED ? 1f : 0.5f);
++            switchHolder.toggle.setOnCheckedChangeListener((button, isChecked) -> {
++                if (isChecked != checked(position)) {
++                    toggle(position, isChecked);
++                }
++            });
++        }
++
++        @Override
++        public int getItemViewType(int position) {
++            return position == ROW_COUNT ? TYPE_INFO : TYPE_SWITCH;
++        }
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java
+new file mode 100644
+index 0000000..0d156b1
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java
+@@ -0,0 +1,185 @@
++package org.telegram.ui;
++
++import android.content.Context;
++import android.view.Gravity;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++import android.widget.Switch;
++
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++
++import org.telegram.messenger.AndroidUtilities;
++import org.telegram.messenger.ForkTuning;
++import org.telegram.messenger.LocaleController;
++import org.telegram.messenger.R;
++import org.telegram.ui.ActionBar.ActionBar;
++import org.telegram.ui.ActionBar.BaseFragment;
++import org.telegram.ui.ActionBar.Theme;
++import org.telegram.ui.Cells.TextInfoPrivacyCell;
++import org.telegram.ui.Cells.TextSettingsCell;
++import org.telegram.ui.Components.LayoutHelper;
++import org.telegram.ui.Components.RecyclerListView;
++
++/**
++ * «Категории» → «Основные»: числа без округления, время с секундами
++ * и вибрация внутри приложения. Настройки применяются сразу.
++ */
++public class ForkMainSettingsActivity extends BaseFragment {
++    private static final int TYPE_SWITCH = 0;
++    private static final int TYPE_INFO = 1;
++
++    private static final int ROW_NO_ROUND = 0;
++    private static final int ROW_SECONDS = 1;
++    private static final int ROW_VIBRATION = 2;
++    private static final int ROW_COUNT = 3;
++
++    private RecyclerListView listView;
++    private ListAdapter adapter;
++
++    @Override
++    public View createView(Context context) {
++        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
++        actionBar.setTitle(LocaleController.getString(R.string.ForkMainSettings));
++        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
++            @Override
++            public void onItemClick(int id) {
++                if (id == -1) {
++                    finishFragment();
++                }
++            }
++        });
++
++        FrameLayout frameLayout = new FrameLayout(context);
++        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
++        fragmentView = frameLayout;
++
++        listView = new RecyclerListView(context);
++        actionBar.setAdaptiveBackground(listView);
++        listView.setLayoutManager(new LinearLayoutManager(context));
++        listView.setVerticalScrollBarEnabled(false);
++        listView.setAdapter(adapter = new ListAdapter(context));
++        frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
++
++        return fragmentView;
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        if (adapter != null) {
++            adapter.notifyDataSetChanged();
++        }
++    }
++
++    private void toggle(int row, boolean value) {
++        switch (row) {
++            case ROW_NO_ROUND: ForkTuning.setNoRoundNumbers(value); break;
++            case ROW_SECONDS: ForkTuning.setShowSeconds(value); break;
++            case ROW_VIBRATION: ForkTuning.setVibration(value); break;
++        }
++        if (adapter != null) {
++            adapter.notifyDataSetChanged();
++        }
++    }
++
++    private CharSequence title(int row) {
++        switch (row) {
++            case ROW_NO_ROUND: return LocaleController.getString(R.string.ForkMainNoRound);
++            case ROW_SECONDS: return LocaleController.getString(R.string.ForkMainSeconds);
++            case ROW_VIBRATION: return LocaleController.getString(R.string.ForkMainVibration);
++        }
++        return "";
++    }
++
++    private boolean checked(int row) {
++        switch (row) {
++            case ROW_NO_ROUND: return ForkTuning.noRoundNumbers();
++            case ROW_SECONDS: return ForkTuning.showSeconds();
++            case ROW_VIBRATION: return ForkTuning.vibration();
++        }
++        return false;
++    }
++
++    private class SwitchHolder extends RecyclerListView.Holder {
++        final Switch toggle;
++
++        SwitchHolder(View itemView, Switch toggle) {
++            super(itemView);
++            this.toggle = toggle;
++        }
++    }
++
++    private class ListAdapter extends RecyclerListView.SelectionAdapter {
++        private final Context context;
++
++        private ListAdapter(Context context) {
++            this.context = context;
++        }
++
++        @Override
++        public int getItemCount() {
++            return ROW_COUNT + 1;
++        }
++
++        @Override
++        public boolean isEnabled(RecyclerView.ViewHolder holder) {
++            return !(holder instanceof SwitchHolder);
++        }
++
++        @NonNull
++        @Override
++        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++            View item;
++            if (viewType == TYPE_SWITCH) {
++                FrameLayout container = new FrameLayout(context);
++                TextSettingsCell cell = new TextSettingsCell(context);
++                cell.setCanDisable(false);
++                cell.setText(LocaleController.getString(R.string.ForkMainPlaceholder), true);
++                container.addView(cell, new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
++
++                Switch toggle = new Switch(context);
++                FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.END);
++                toggleParams.rightMargin = AndroidUtilities.dp(16);
++                container.addView(toggle, toggleParams);
++                item = container;
++                item.setLayoutParams(new RecyclerView.LayoutParams(
++                        RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++                return new SwitchHolder(item, toggle);
++            }
++            item = new TextInfoPrivacyCell(context);
++            item.setLayoutParams(new RecyclerView.LayoutParams(
++                    RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++            return new RecyclerListView.Holder(item);
++        }
++
++        @Override
++        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
++            if (position == ROW_COUNT) {
++                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
++                cell.setText(LocaleController.getString(R.string.ForkMainInfo));
++                return;
++            }
++            SwitchHolder switchHolder = (SwitchHolder) holder;
++            ((TextSettingsCell) ((FrameLayout) holder.itemView).getChildAt(0)).setText(title(position), true);
++            // Состояние выставляем до слушателя, иначе recycled-ячейка
++            // «щёлкнет» переключателем при прокрутке.
++            switchHolder.toggle.setOnCheckedChangeListener(null);
++            switchHolder.toggle.setChecked(checked(position));
 +            switchHolder.toggle.setOnCheckedChangeListener((button, isChecked) -> {
 +                if (isChecked != checked(position)) {
 +                    toggle(position, isChecked);
@@ -2108,7 +2414,7 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-index b779126..edb0fd3 100644
+index b779126..e103c74 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 @@ -69,6 +69,7 @@ import org.telegram.messenger.BirthdayController;
@@ -2127,7 +2433,7 @@ index b779126..edb0fd3 100644
          contentView = new SizeNotifierFrameLayout(context) {
              @Override
              protected void dispatchDraw(Canvas canvas) {
-@@ -685,6 +687,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -685,6 +687,13 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
              items.add(UItem.asShadow(null));
          }
  
@@ -2135,11 +2441,13 @@ index b779126..edb0fd3 100644
 +            items.add(UItem.asShadow(null));
 +        items.add(UItem.asCustomShadow(createForkBlock()));
 +        items.add(UItem.asShadow(null));
++        items.add(UItem.asCustomShadow(createCategoriesBlock()));
++        items.add(UItem.asShadow(null));
 +
          items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
          items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
          items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
-@@ -887,7 +894,136 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -887,7 +896,165 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                  presentFragment(new RoundVideoSettingsActivity());
                  break;
              }
@@ -2205,6 +2513,35 @@ index b779126..edb0fd3 100644
 +        card.addView(createForkRow(context, 0xFF8E8E93, 0xFF636366, R.drawable.fork_ic_diag,
 +                getString(R.string.ForkLastCrash), ForkDiagnostics.summary(context),
 +                v -> presentForkCrashReport()));
++
++        card.setClipChildren(false);
++        return card;
++    }
++
++    private View createCategoriesBlock() {
++        final Context context = getParentActivity();
++        final int accent = 0xFFAF52DE;
++
++        LinearLayout card = new LinearLayout(context);
++        card.setOrientation(LinearLayout.VERTICAL);
++        GradientDrawable background = new GradientDrawable();
++        background.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider));
++        background.setCornerRadius(dp(14));
++        background.setStroke(AndroidUtilities.dp2(1.5f), 0x33AF52DE);
++        card.setBackground(background);
++
++        TextView title = new TextView(context);
++        title.setText(getString(R.string.ForkCategories).toUpperCase());
++        title.setTextColor(accent);
++        title.setTextSize(13);
++        title.setTypeface(AndroidUtilities.getTypeface("sans-serif-medium"));
++        title.setLetterSpacing(0.05f);
++        title.setPadding(dp(16), dp(14), dp(16), dp(6));
++        card.addView(title, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
++
++        card.addView(createForkRow(context, 0xFFAF52DE, 0xFF8944AB, R.drawable.fork_ic_main,
++                getString(R.string.ForkMainSettings), "",
++                v -> presentSettingFragment(new ForkMainSettingsActivity())));
 +
 +        card.setClipChildren(false);
 +        return card;
@@ -2321,6 +2658,37 @@ index 0000000..0eccd5f
 +    <path
 +        android:fillColor="#FF000000"
 +        android:pathData="M13.3,8.5h2.2v2.2h-2.2z" />
++</vector>
+diff --git a/TMessagesProj/src/main/res/drawable/fork_ic_main.xml b/TMessagesProj/src/main/res/drawable/fork_ic_main.xml
+new file mode 100644
+index 0000000..b65019d
+--- /dev/null
++++ b/TMessagesProj/src/main/res/drawable/fork_ic_main.xml
+@@ -0,0 +1,25 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <!-- Ползунки: настройки основного раздела -->
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,6h10v2h-10z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M17,4.5a2,2 0 1,0 0.01,0z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,12h6v2h-6z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M13,10.5a2,2 0 1,0 0.01,0z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,18h8v2h-8z" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M15,16.5a2,2 0 1,0 0.01,0z" />
 +</vector>
 diff --git a/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml b/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml
 new file mode 100644
@@ -2441,7 +2809,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..ab7bf36 100644
+index 24c5629..ef5d2a0 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -2452,7 +2820,7 @@ index 24c5629..ab7bf36 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,39 @@
+@@ -263,4 +263,46 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -2487,6 +2855,13 @@ index 24c5629..ab7bf36 100644
 +    <string name="ForkGhostInfo">Режим призрака скрывает вашу активность: сообщения остаются непрочитанными и прочтения не отправляются, история не скачивается, «печатает» не показывается, а в фоне приложение не обращается к серверу. Включайте только для своего аккаунта.</string>
 +    <string name="ForkGhostOff">Режим призрака выключен. Включите его, чтобы скрывать активность.</string>
 +    <string name="ForkGhostPlaceholder">Режим призрака</string>
++    <string name="ForkCategories">Категории</string>
++    <string name="ForkMainSettings">Основные</string>
++    <string name="ForkMainNoRound">Не округлять числа</string>
++    <string name="ForkMainSeconds">Показывать секунды</string>
++    <string name="ForkMainVibration">Вибрация в приложении</string>
++    <string name="ForkMainInfo">Числа показываются точно, без округления до 1.2K. Время в сообщениях выводится с секундами. Вибрация — это отклик на нажатия внутри приложения, звуки уведомлений не затрагиваются.</string>
++    <string name="ForkMainPlaceholder">Основные</string>
 +    <string name="ForkCrashReport">Отчёт о падении</string>
 +    <string name="ForkLastLaunch">Последний запуск</string>
 +    <string name="ForkNoCrash">Ничего не записано. Если приложение закрывается, а эта запись остаётся пустой, значит падение произошло внутри нативной библиотеки и перехватить его не удалось.</string>
@@ -2506,7 +2881,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..63bbe5c 100644
+index 1013bb6..55c9eb5 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -2526,7 +2901,7 @@ index 1013bb6..63bbe5c 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,38 @@
+@@ -11235,4 +11236,45 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -2560,6 +2935,13 @@ index 1013bb6..63bbe5c 100644
 +    <string name="ForkGhostInfo">Ghost mode hides your activity. Messages stay unread and no read receipts are sent, history is not downloaded, typing is not shown, and the app stops talking to the server while it is in the background. Use it only for your own account.</string>
 +    <string name="ForkGhostOff">Ghost mode is off. Turn it on to hide your activity.</string>
 +    <string name="ForkGhostPlaceholder">Ghost mode</string>
++    <string name="ForkCategories">Categories</string>
++    <string name="ForkMainSettings">Main</string>
++    <string name="ForkMainNoRound">Don't round numbers</string>
++    <string name="ForkMainSeconds">Show seconds</string>
++    <string name="ForkMainVibration">Vibration in app</string>
++    <string name="ForkMainInfo">Numbers are shown exactly, without rounding to 1.2K. The time in messages includes seconds. Vibration is the response to taps inside the app; notification sounds are not affected.</string>
++    <string name="ForkMainPlaceholder">Main</string>
 +    <string name="ForkCrashReport">Crash report</string>
 +    <string name="ForkLastLaunch">Last launch</string>
 +    <string name="ForkNoCrash">Nothing recorded. If the app closes and this entry stays empty, the crash happened inside a native library and could not be caught.</string>
