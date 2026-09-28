@@ -138,15 +138,14 @@ index 083d15e..f90427d 100644
              if (view == null || view.getContext() == null) return;
              if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-index 5405be7..5a4d322 100644
+index 5405be7..0ac6638 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-@@ -282,6 +282,8 @@ public class ApplicationLoader extends Application {
+@@ -282,6 +282,7 @@ public class ApplicationLoader extends Application {
      @Override
      public void onCreate() {
          applicationLoaderInstance = this;
 +        ForkGhost.init(this);
-+        ForkTuning.applyAnimationSettings();
          try {
              applicationContext = getApplicationContext();
          } catch (Throwable ignore) {
@@ -1159,10 +1158,10 @@ index 0000000..1274aa5
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
 new file mode 100644
-index 0000000..d8c379c
+index 0000000..eb9de66
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,98 @@
 +package org.telegram.messenger;
 +
 +/**
@@ -1245,29 +1244,19 @@ index 0000000..d8c379c
 +                .edit()
 +                .putInt(KEY_ANIMATION, value)
 +                .apply();
-+        applyAnimationSettings();
 +    }
 +
 +    /**
-+     * Множитель для анимаций всего процесса. «Как в системе» (0) означает
-+     * не трогать настройки Android — в том числе режим анимаций для
-+     * доступности и «отключить анимации» в настройках разработчика.
++     * Длительности анимаций строк в списках, мс.
++     * Глобальный множитель анимаций процесса трогать нельзя:
++     * ValueAnimator.setDurationScale() — скрытый API, в публичном SDK его нет.
 +     */
-+    public static float animationScale() {
++    public static int[] listAnimationDurations() {
 +        switch (animationSpeed()) {
-+            case ANIM_SLOW: return 1.5f;
-+            case ANIM_NORMAL: return 1.0f;
-+            case ANIM_FAST: return 0.6f;
-+            case ANIM_OFF: return 0.0f;
-+            default: return -1f;
-+        }
-+    }
-+
-+    /** Применяем сразу, чтобы переключатель был виден в действии. */
-+    public static void applyAnimationSettings() {
-+        try {
-+            android.animation.ValueAnimator.setDurationScale(animationScale());
-+        } catch (Throwable ignore) {
++            case ANIM_SLOW: return new int[]{250, 250, 300, 250};
++            case ANIM_FAST: return new int[]{90, 90, 120, 90};
++            case ANIM_OFF: return new int[]{0, 0, 0, 0};
++            default: return new int[]{150, 150, 200, 150};
 +        }
 +    }
 +}
@@ -1387,7 +1376,7 @@ index 39f493f..33534fb 100644
  
      public static boolean isAutoplayGifs() {
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
-index ee6b470..35159ae 100644
+index ee6b470..bf03154 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
 @@ -60,6 +60,7 @@ import androidx.core.graphics.ColorUtils;
@@ -1415,22 +1404,17 @@ index ee6b470..35159ae 100644
          setGlowColor(getThemedColor(Theme.key_actionBarDefault));
          selectorDrawable = Theme.getSelectorDrawable(getThemedColor(Theme.key_listSelector), false);
          selectorDrawable.setCallback(this);
-@@ -3358,8 +3362,29 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
+@@ -3357,9 +3361,25 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
+ //        }
      }
  
-     @Override
 +    /** Длительности зависят от настройки «Скорость анимаций». */
 +    private void tuneItemAnimator(ItemAnimator animator) {
 +        if (!(animator instanceof DefaultItemAnimator)) {
 +            return;
 +        }
-+        int add, remove, move, change;
-+        switch (ForkTuning.animationSpeed()) {
-+            case ForkTuning.ANIM_SLOW: add = 250; remove = 250; move = 300; change = 250; break;
-+            case ForkTuning.ANIM_FAST: add = 90; remove = 90; move = 120; change = 90; break;
-+            case ForkTuning.ANIM_OFF: add = 0; remove = 0; move = 0; change = 0; break;
-+            default: add = 150; remove = 150; move = 200; change = 150; break;
-+        }
++        int[] d = ForkTuning.listAnimationDurations();
++        int add = d[0], remove = d[1], move = d[2], change = d[3];
 +        DefaultItemAnimator def = (DefaultItemAnimator) animator;
 +        def.setAddDuration(add);
 +        def.setRemoveDuration(remove);
@@ -1439,6 +1423,7 @@ index ee6b470..35159ae 100644
 +        def.setSupportsChangeAnimations(false);
 +    }
 +
+     @Override
      public void setItemAnimator(@Nullable ItemAnimator animator) {
          super.setItemAnimator(animator);
 +        tuneItemAnimator(animator);
@@ -1447,10 +1432,10 @@ index ee6b470..35159ae 100644
  //        }
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java
 new file mode 100644
-index 0000000..785a62b
+index 0000000..7bd0152
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,132 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -1545,6 +1530,11 @@ index 0000000..785a62b
 +        @Override
 +        public int getItemCount() {
 +            return MODES.length + 1;
++        }
++
++        @Override
++        public boolean isEnabled(RecyclerView.ViewHolder holder) {
++            return true;
 +        }
 +
 +        @NonNull
@@ -3099,7 +3089,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..26aa146 100644
+index 24c5629..36194d0 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -3158,7 +3148,7 @@ index 24c5629..26aa146 100644
 +    <string name="ForkAnimationNormal">Обычно</string>
 +    <string name="ForkAnimationFast">Быстро</string>
 +    <string name="ForkAnimationOff">Выключены</string>
-+    <string name="ForkAnimationInfo">Скорость применяется ко всему приложению: переходы между экранами, появление и исчездание строк в списках, открытие и закрытие разделов настроек.</string>
++    <string name="ForkAnimationInfo">Скорость применяется к анимированным спискам приложения: появление, перемещение и исчезновение строк, а также переключатели в настройках.</string>
 +    <string name="ForkCrashReport">Отчёт о падении</string>
 +    <string name="ForkLastLaunch">Последний запуск</string>
 +    <string name="ForkNoCrash">Ничего не записано. Если приложение закрывается, а эта запись остаётся пустой, значит падение произошло внутри нативной библиотеки и перехватить его не удалось.</string>
@@ -3178,7 +3168,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..a43f567 100644
+index 1013bb6..7c7f48f 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -3245,7 +3235,7 @@ index 1013bb6..a43f567 100644
 +    <string name="ForkAnimationNormal">Normal</string>
 +    <string name="ForkAnimationFast">Fast</string>
 +    <string name="ForkAnimationOff">Off</string>
-+    <string name="ForkAnimationInfo">The speed applies to the whole app: screen transitions, list rows appearing and disappearing, and the opening and closing of settings sections.</string>
++    <string name="ForkAnimationInfo">The speed applies to the animated lists of the app: rows appearing, moving, disappearing, and the switches in settings.</string>
 +    <string name="ForkCrashReport">Crash report</string>
 +    <string name="ForkLastLaunch">Last launch</string>
 +    <string name="ForkNoCrash">Nothing recorded. If the app closes and this entry stays empty, the crash happened inside a native library and could not be caught.</string>
