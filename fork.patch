@@ -1344,7 +1344,7 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-index b779126..5c558f6 100644
+index b779126..daa7a08 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 @@ -69,6 +69,7 @@ import org.telegram.messenger.BirthdayController;
@@ -1375,7 +1375,7 @@ index b779126..5c558f6 100644
          items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
          items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
          items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
-@@ -887,7 +894,122 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -887,7 +894,123 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                  presentFragment(new RoundVideoSettingsActivity());
                  break;
              }
@@ -1475,8 +1475,9 @@ index b779126..5c558f6 100644
 +    }
 +
 +    private void presentForkCrashReport() {
-+        final String error = ForkDiagnostics.getLastError(this);
-+        final long start = ForkDiagnostics.getLastStart(this);
++        final Context parent = getParentActivity();
++        final String error = ForkDiagnostics.getLastError(parent);
++        final long start = ForkDiagnostics.getLastStart(parent);
 +        String time = "-";
 +        if (start > 0) {
 +            time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
@@ -1489,11 +1490,11 @@ index b779126..5c558f6 100644
 +        } else {
 +            builder.append("\n\n").append(getString(R.string.ForkNoCrash));
          }
-+        new AlertDialog.Builder(getParentActivity(), resourceProvider)
-+            .setTitle(R.string.ForkCrashReport)
++        new AlertDialog.Builder(parent, resourceProvider)
++            .setTitle(getString(R.string.ForkCrashReport))
 +            .setMessage(builder.toString())
-+            .setPositiveButton(R.string.OK, null)
-+            .setNeutralButton(R.string.ForkClearReport, (dialog, which) -> ForkDiagnostics.clear(this))
++            .setPositiveButton(getString(R.string.OK), null)
++            .setNeutralButton(getString(R.string.ForkClearReport), (dialog, which) -> ForkDiagnostics.clear(parent))
 +            .show();
      }
  
