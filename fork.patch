@@ -3168,7 +3168,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..7c7f48f 100644
+index 1013bb6..24317bb 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -3214,17 +3214,17 @@ index 1013bb6..7c7f48f 100644
 +    <string name="ForkLastCrash">Last crash</string>
 +    <string name="ForkHuntergramSettings">Huntergram settings</string>
 +    <string name="ForkGhostEnabled">Ghost mode</string>
-+    <string name="ForkGhostRead">Don't read messages</string>
-+    <string name="ForkGhostHistory">Don't read history</string>
-+    <string name="ForkGhostOnline">Don't show online</string>
-+    <string name="ForkGhostTyping">Don't send typing</string>
++    <string name="ForkGhostRead">Don\'t read messages</string>
++    <string name="ForkGhostHistory">Don\'t read history</string>
++    <string name="ForkGhostOnline">Don\'t show online</string>
++    <string name="ForkGhostTyping">Don\'t send typing</string>
 +    <string name="ForkGhostAutoOffline">Automatic offline</string>
 +    <string name="ForkGhostInfo">Ghost mode hides your activity. Messages stay unread and no read receipts are sent, history is not downloaded, typing is not shown, and the app stops talking to the server while it is in the background. Use it only for your own account.</string>
 +    <string name="ForkGhostOff">Ghost mode is off. Turn it on to hide your activity.</string>
 +    <string name="ForkGhostPlaceholder">Ghost mode</string>
 +    <string name="ForkCategories">Categories</string>
 +    <string name="ForkMainSettings">Main</string>
-+    <string name="ForkMainNoRound">Don't round numbers</string>
++    <string name="ForkMainNoRound">Don\'t round numbers</string>
 +    <string name="ForkMainSeconds">Show seconds</string>
 +    <string name="ForkMainVibration">Vibration in app</string>
 +    <string name="ForkMainInfo">Numbers are shown exactly, without rounding to 1.2K. The time in messages includes seconds. Vibration is the response to taps inside the app; notification sounds are not affected.</string>
