@@ -199,10 +199,12 @@ jobs:
         # устройстве: класс обязан остаться с исходным именем.
         working-directory: telegram
         run: |
-          MAPPING=TMessagesProj_App/build/outputs/mapping/release/mapping.txt
-          if [ ! -f "$MAPPING" ]; then
+          # Путь включает вкус сборки (afatRelease), поэтому ищем файл.
+          MAPPING=$(find . -name mapping.txt -path "*outputs/mapping*" | head -1)
+          if [ -z "$MAPPING" ]; then
             echo "::error::mapping.txt не найден — minify не отработал?"; exit 1
           fi
+          echo "mapping: $MAPPING"
           for cls in org.mozilla.javascript.Context org.mozilla.javascript.ContextFactory \
                      org.telegram.messenger.ForkPluginApi org.telegram.messenger.ForkPlugin \
                      org.telegram.messenger.ForkPluginManager org.telegram.messenger.ForkDiagnostics; do
