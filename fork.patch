@@ -362,10 +362,10 @@ index 0000000..6b72237
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
 new file mode 100644
-index 0000000..6d274fd
+index 0000000..1274aa5
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
-@@ -0,0 +1,498 @@
+@@ -0,0 +1,518 @@
 +package org.telegram.messenger;
 +
 +import android.content.SharedPreferences;
@@ -402,6 +402,7 @@ index 0000000..6d274fd
 +    public static final long MAX_STEPS = 2_000_000L;
 +
 +    private static final String PREFS = "fork_plugins";
++    private static final String KEY_SYSTEM_ENABLED = "system_enabled";
 +    private static final String DIR = "fork-plugins";
 +    private static final String TAG = "@fork-plugin";
 +    private static final String[] EXTENSIONS = {"js", "plugin"};
@@ -799,9 +800,28 @@ index 0000000..6d274fd
 +        prefs().edit().putString(pluginId + "/" + key, value).apply();
 +    }
 +
++    /** Главный выключатель: выключен — плагины не выполняются. */
++    public static boolean isSystemEnabled() {
++        return ApplicationLoader.applicationContext
++                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                .getBoolean(KEY_SYSTEM_ENABLED, true);
++    }
++
++    public static void setSystemEnabled(boolean value) {
++        ApplicationLoader.applicationContext
++                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                .edit()
++                .putBoolean(KEY_SYSTEM_ENABLED, value)
++                .apply();
++    }
++
 +    public void run(final ForkPlugin plugin) {
 +        plugin.rows.clear();
 +        plugin.error = null;
++        if (!isSystemEnabled()) {
++            plugin.error = "plugin system is turned off in settings";
++            return;
++        }
 +        File file = new File(dir(), plugin.fileName);
 +        if (!file.exists() || file.length() > MAX_SOURCE_SIZE) {
 +            plugin.error = "source file is missing or too large";
@@ -1183,19 +1203,21 @@ index 0000000..de6892e
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
 new file mode 100644
-index 0000000..faf2999
+index 0000000..2730209
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,276 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
 +import android.content.Intent;
 +import android.net.Uri;
 +import android.text.TextUtils;
++import android.view.Gravity;
 +import android.view.View;
 +import android.view.ViewGroup;
 +import android.widget.FrameLayout;
++import android.widget.Switch;
 +
 +import androidx.annotation.NonNull;
 +import androidx.recyclerview.widget.LinearLayoutManager;
@@ -1223,12 +1245,12 @@ index 0000000..faf2999
 +    private static final int TYPE_ACTION = 0;
 +    private static final int TYPE_PLUGIN = 1;
 +    private static final int TYPE_INFO = 2;
-+
-+    private static final int ROW_LOAD = 0;
++    private static final int TYPE_SWITCH = 3;
 +
 +    private RecyclerListView listView;
 +    private ListAdapter adapter;
 +    private final ArrayList<ForkPlugin> plugins = new ArrayList<>();
++    private boolean systemEnabled = true;
 +
 +    @Override
 +    public View createView(Context context) {
@@ -1269,16 +1291,21 @@ index 0000000..faf2999
 +    }
 +
 +    private void update() {
++        systemEnabled = ForkPluginManager.isSystemEnabled();
 +        plugins.clear();
-+        plugins.addAll(ForkPluginManager.getInstance().loadPlugins());
++        if (systemEnabled) {
++            plugins.addAll(ForkPluginManager.getInstance().loadPlugins());
++        }
 +        if (adapter != null) {
 +            adapter.notifyDataSetChanged();
 +        }
 +    }
 +
 +    private void onRowClicked(int position) {
-+        if (position == ROW_LOAD) {
-+            openFilePicker();
++        if (position == 0) {
++            if (systemEnabled) {
++                openFilePicker();
++            }
 +            return;
 +        }
 +        int index = position - 1;
@@ -1325,6 +1352,15 @@ index 0000000..faf2999
 +        }).start();
 +    }
 +
++    private class SwitchHolder extends RecyclerListView.Holder {
++        final Switch toggle;
++
++        SwitchHolder(View itemView, Switch toggle) {
++            super(itemView);
++            this.toggle = toggle;
++        }
++    }
++
 +    private class ListAdapter extends RecyclerListView.SelectionAdapter {
 +        private final Context context;
 +
@@ -1334,18 +1370,46 @@ index 0000000..faf2999
 +
 +        @Override
 +        public int getItemCount() {
-+            return plugins.size() + 2;
++            // 0 — выключатель, 1 — кнопка загрузки (только когда система включена),
++            // дальше плагины, последняя строка — пояснение.
++            return plugins.size() + (systemEnabled ? 3 : 2);
 +        }
 +
 +        @Override
 +        public boolean isEnabled(RecyclerView.ViewHolder holder) {
-+            return true;
++            // По строке с переключателем кликает сам Switch, список её не обрабатывает.
++            return !(holder instanceof SwitchHolder);
 +        }
 +
 +        @NonNull
 +        @Override
 +        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
 +            View view;
++            if (viewType == TYPE_SWITCH) {
++                FrameLayout container = new FrameLayout(context);
++                TextSettingsCell cell = new TextSettingsCell(context);
++                cell.setCanDisable(false);
++                cell.setText(LocaleController.getString(R.string.ForkPluginsSystem), true);
++                container.addView(cell, new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
++
++                Switch toggle = new Switch(context);
++                FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.END);
++                toggleParams.rightMargin = AndroidUtilities.dp(16);
++                container.addView(toggle, toggleParams);
++                toggle.setOnCheckedChangeListener((view, checked) -> {
++                    if (checked != systemEnabled) {
++                        ForkPluginManager.setSystemEnabled(checked);
++                        update();
++                    }
++                });
++
++                view = container;
++                view.setLayoutParams(new RecyclerView.LayoutParams(
++                        RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++                return new SwitchHolder(view, toggle);
++            }
 +            if (viewType == TYPE_ACTION || viewType == TYPE_PLUGIN) {
 +                TextSettingsCell cell = new TextSettingsCell(context);
 +                cell.setCanDisable(false);
@@ -1353,17 +1417,34 @@ index 0000000..faf2999
 +            } else {
 +                view = new TextInfoPrivacyCell(context);
 +            }
-+            view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++            view.setLayoutParams(new RecyclerView.LayoutParams(
++                    RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
 +            return new RecyclerListView.Holder(view);
 +        }
 +
 +        @Override
 +        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
 +            int type = getItemViewType(position);
++            if (type == TYPE_SWITCH) {
++                SwitchHolder switchHolder = (SwitchHolder) holder;
++                // Сначала состояние, потом слушатель: иначе recycled-ячейка
++                // «щёлкнет» переключателем при прокрутке.
++                switchHolder.toggle.setOnCheckedChangeListener(null);
++                switchHolder.toggle.setChecked(systemEnabled);
++                switchHolder.toggle.setOnCheckedChangeListener((view, checked) -> {
++                    if (checked != systemEnabled) {
++                        ForkPluginManager.setSystemEnabled(checked);
++                        update();
++                    }
++                });
++                return;
++            }
 +            if (type == TYPE_ACTION) {
 +                TextSettingsCell cell = (TextSettingsCell) holder.itemView;
 +                cell.setText(LocaleController.getString(R.string.ForkPluginsLoad), true);
-+            } else if (type == TYPE_PLUGIN) {
++                return;
++            }
++            if (type == TYPE_PLUGIN) {
 +                ForkPlugin plugin = plugins.get(position - 1);
 +                TextSettingsCell cell = (TextSettingsCell) holder.itemView;
 +                String value = plugin.subtitle();
@@ -1375,8 +1456,12 @@ index 0000000..faf2999
 +                    value = value + " - " + LocaleController.getString(R.string.ForkPluginDisabled);
 +                }
 +                cell.setTextAndValue(plugin.name, value, false);
++                return;
++            }
++            TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
++            if (!systemEnabled) {
++                cell.setText(LocaleController.getString(R.string.ForkPluginsSystemOff));
 +            } else {
-+                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
 +                cell.setText(plugins.isEmpty()
 +                        ? LocaleController.getString(R.string.ForkPluginsEmpty)
 +                        : LocaleController.getString(R.string.ForkPluginsInfo));
@@ -1385,10 +1470,13 @@ index 0000000..faf2999
 +
 +        @Override
 +        public int getItemViewType(int position) {
-+            if (position == ROW_LOAD) {
++            if (position == 0) {
++                return TYPE_SWITCH;
++            }
++            if (position == 1 && systemEnabled) {
 +                return TYPE_ACTION;
 +            }
-+            if (position == plugins.size() + 1) {
++            if (position == getItemCount() - 1) {
 +                return TYPE_INFO;
 +            }
 +            return TYPE_PLUGIN;
@@ -1705,7 +1793,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..17ea263 100644
+index 24c5629..3bfe6f0 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -1716,7 +1804,7 @@ index 24c5629..17ea263 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,25 @@
+@@ -263,4 +263,27 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -1725,6 +1813,8 @@ index 24c5629..17ea263 100644
 +    <string name="ForkPlugins">Плагины</string>
 +    <string name="ForkPluginsLoad">Загрузить плагин из файла</string>
 +    <string name="ForkPluginsEmpty">Плагинов пока нет. Нажми «Загрузить плагин из файла» и выбери файл .js или .plugin.</string>
++    <string name="ForkPluginsSystem">Включить систему плагинов</string>
++    <string name="ForkPluginsSystemOff">Система плагинов выключена. Установленные плагины остаются на месте и заработают снова, как только её включат.</string>
 +    <string name="ForkPluginsInfo">Плагин — это файл на JavaScript. Он выполняется в песочнице и может только добавлять свои настройки в этот раздел. Загружай плагины из источников, которым доверяешь.</string>
 +    <string name="ForkPluginEnabled">Включён</string>
 +    <string name="ForkPluginDisabled">Выключен</string>
@@ -1756,7 +1846,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..a6b2075 100644
+index 1013bb6..cc5a170 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -1776,7 +1866,7 @@ index 1013bb6..a6b2075 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,24 @@
+@@ -11235,4 +11236,26 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -1784,6 +1874,8 @@ index 1013bb6..a6b2075 100644
 +    <string name="ForkPlugins">Plugins</string>
 +    <string name="ForkPluginsLoad">Load plugin from file</string>
 +    <string name="ForkPluginsEmpty">No plugins installed yet. Tap \"Load plugin from file\" and pick a .js or .plugin file.</string>
++    <string name="ForkPluginsSystem">Enable plugin system</string>
++    <string name="ForkPluginsSystemOff">The plugin system is turned off. Installed plugins stay in place and start working again after you turn it on.</string>
 +    <string name="ForkPluginsInfo">A plugin is a JavaScript file. It runs in a sandbox and can only add its own settings here. Load plugins from sources you trust.</string>
 +    <string name="ForkPluginEnabled">Enabled</string>
 +    <string name="ForkPluginDisabled">Disabled</string>
