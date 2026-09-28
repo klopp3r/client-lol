@@ -1261,7 +1261,7 @@ index 245a5ab..75d694c 100644
          int lastDec = 0;
          int KCount = 0;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
-index 7a0b35b..adc1b85 100644
+index 7a0b35b..c9f774e 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 @@ -11386,6 +11386,10 @@ public class MessagesController extends BaseController implements NotificationCe
@@ -1275,21 +1275,22 @@ index 7a0b35b..adc1b85 100644
          final long selfId = UserConfig.getInstance(UserConfig.selectedAccount).getClientUserId();
          if (dialogId == selfId) {
              return false;
-@@ -11524,6 +11528,13 @@ public class MessagesController extends BaseController implements NotificationCe
+@@ -11524,7 +11528,13 @@ public class MessagesController extends BaseController implements NotificationCe
          if (BuildVars.LOGS_ENABLED && loaderLogger == null && mode == 0) {
              loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
          }
+-        if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && (fromCache || DialogObject.isEncryptedDialog(dialogId))) {
 +        // Режим призрака: «не читать историю» — с сервера не качаем,
 +        // показываем только то, что уже есть локально.
 +        boolean ghostHistory = ForkGhost.blockHistory() || (ForkGhost.autoOffline() && ForkGhost.isBackgrounded());
-+        if (ghostHistory && !fromCache) {
-+            fromCache = true;
-+            queryFromServer = false;
-+        }
-         if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && (fromCache || DialogObject.isEncryptedDialog(dialogId))) {
++        // Параметры fromCache/queryFromServer ниже используются в лямбдах,
++        // поэтому их не переприсваиваем, а решаем условием.
++        boolean readFromCache = fromCache || DialogObject.isEncryptedDialog(dialogId) || ghostHistory;
++        if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && readFromCache) {
              getMessagesStorage().getMessages(dialogId, mergeDialogId, loadInfo, count, max_id, offset_date, minDate, classGuid, load_type, mode, threadMessageId, loadIndex, processMessages, isTopic, loaderLogger);
          } else {
-@@ -14397,6 +14408,10 @@ public class MessagesController extends BaseController implements NotificationCe
+             final TLRPC.Chat chat = dialogId < 0 ? getChat(-dialogId): null;
+@@ -14397,6 +14407,10 @@ public class MessagesController extends BaseController implements NotificationCe
          if (messageObject.scheduled) {
              return;
          }
@@ -1300,7 +1301,7 @@ index 7a0b35b..adc1b85 100644
          ArrayList<Integer> arrayList = new ArrayList<>();
          if (messageObject.messageOwner.mentioned) {
              getMessagesStorage().markMentionMessageAsRead(-messageObject.messageOwner.peer_id.channel_id, messageObject.getId(), messageObject.getDialogId());
-@@ -14557,6 +14572,13 @@ public class MessagesController extends BaseController implements NotificationCe
+@@ -14557,6 +14571,13 @@ public class MessagesController extends BaseController implements NotificationCe
      }
  
      private void completeReadTask(ReadTask task) {
