@@ -63,6 +63,33 @@ jobs:
           print("строки в порядке")
           PYEOF
 
+      - name: Sanity check CI scripts
+        # Опечатка в bash-скрипте ломала прогон уже после 47 минут сборки.
+        # Синтаксис всех run-блоков проверяем до начала сборки.
+        run: |
+          python3 - <<'PYEOF'
+          import subprocess, sys
+          try:
+              import yaml
+          except ImportError:
+              print("::warning::PyYAML нет — проверка синтаксиса пропущена")
+              sys.exit(0)
+          doc = yaml.safe_load(open(".github/workflows/build-apk.yml"))
+          bad = 0
+          for job in doc["jobs"].values():
+              for step in job.get("steps", []):
+                  script = step.get("run")
+                  if not script or "PYEOF" in script or "yaml" in script:
+                      continue
+                  proc = subprocess.run(["bash", "-n"], input=script, text=True,
+                                        capture_output=True)
+                  if proc.returncode:
+                      bad += 1
+                      print("::error::синтаксис в шаге %r: %s"
+                            % (step.get("name"), proc.stderr.strip()))
+          sys.exit(1 if bad else 0)
+          PYEOF
+
       - name: Write gradle.properties overrides
         # Задаётся отдельным шагом, а не патчем: так не ломается,
         # когда upstream меняет свой gradle.properties.
