@@ -278,7 +278,8 @@ jobs:
                      org.telegram.messenger.ForkPluginManager org.telegram.messenger.ForkDiagnostics \
                      org.telegram.ui.ForkPluginInstallActivity \
                      org.telegram.messenger.ForkGhost org.telegram.ui.ForkGhostActivity \
-                     org.telegram.messenger.ForkTuning org.telegram.ui.ForkMainSettingsActivity; do org.telegram.ui.ForkAnimationActivity; do
+                     org.telegram.messenger.ForkTuning org.telegram.ui.ForkMainSettingsActivity \
+                     org.telegram.ui.ForkAnimationActivity; do
             # В mapping у сохранённого класса строка заканчивается двоеточием.
             if ! grep -q "^$cls -> $cls:" "$MAPPING"; then
               echo "::error::$cls обфусцирован или вырезан R8 — нужны keep-правила"
