@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..9e36a06 100644
+index 6801688..abd4095 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,24 @@
+@@ -53,4 +53,28 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -47,6 +47,10 @@ index 6801688..9e36a06 100644
 +# экрана настроек. Обфускация тоже запрещена: ClassShutter сравнивает имена
 +# классов как строки.
 +-keep class org.mozilla.javascript.** { *; }
++# Rhino тянет за собой настольный отладчик (javax.swing, java.awt), которого
++# на Android нет: без этих правил R8 падает на отсутствующих классах.
++-dontwarn javax.swing.**
++-dontwarn java.awt.**
 +
 +# Классы форка: имена нужны ClassShutter (песочница) и обработчику падений.
 +-keep class org.telegram.messenger.ForkPlugin { *; }
