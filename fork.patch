@@ -1335,7 +1335,7 @@ index 0000000..de6892e
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
 new file mode 100644
-index 0000000..2730209
+index 0000000..a8c778d
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginsActivity.java
 @@ -0,0 +1,276 @@
@@ -1530,7 +1530,7 @@ index 0000000..2730209
 +                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.END);
 +                toggleParams.rightMargin = AndroidUtilities.dp(16);
 +                container.addView(toggle, toggleParams);
-+                toggle.setOnCheckedChangeListener((view, checked) -> {
++                toggle.setOnCheckedChangeListener((button, checked) -> {
 +                    if (checked != systemEnabled) {
 +                        ForkPluginManager.setSystemEnabled(checked);
 +                        update();
@@ -1563,7 +1563,7 @@ index 0000000..2730209
 +                // «щёлкнет» переключателем при прокрутке.
 +                switchHolder.toggle.setOnCheckedChangeListener(null);
 +                switchHolder.toggle.setChecked(systemEnabled);
-+                switchHolder.toggle.setOnCheckedChangeListener((view, checked) -> {
++                switchHolder.toggle.setOnCheckedChangeListener((button, checked) -> {
 +                    if (checked != systemEnabled) {
 +                        ForkPluginManager.setSystemEnabled(checked);
 +                        update();
