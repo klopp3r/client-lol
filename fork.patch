@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..a78db07 100644
+index 6801688..5af8f8d 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,29 @@
+@@ -53,4 +53,31 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -60,6 +60,8 @@ index 6801688..a78db07 100644
 +-keep class org.telegram.ui.ForkPluginsActivity { *; }
 +-keep class org.telegram.ui.ForkPluginSettingsActivity { *; }
 +-keep class org.telegram.ui.ForkPluginInstallActivity { *; }
++-keep class org.telegram.messenger.ForkGhost { *; }
++-keep class org.telegram.ui.ForkGhostActivity { *; }
 diff --git a/TMessagesProj/src/main/AndroidManifest.xml b/TMessagesProj/src/main/AndroidManifest.xml
 index 6f6d377..cdc3d53 100644
 --- a/TMessagesProj/src/main/AndroidManifest.xml
@@ -112,6 +114,18 @@ index 6f6d377..cdc3d53 100644
          <meta-data android:name="com.google.android.gms.vision.DEPENDENCIES" android:value="face,barcode" />
  
          <meta-data android:name="android.max_aspect" android:value="2.5" />
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
+index 5405be7..0ac6638 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
+@@ -282,6 +282,7 @@ public class ApplicationLoader extends Application {
+     @Override
+     public void onCreate() {
+         applicationLoaderInstance = this;
++        ForkGhost.init(this);
+         try {
+             applicationContext = getApplicationContext();
+         } catch (Throwable ignore) {
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 index 4ed7e64..6e4881f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
@@ -245,6 +259,188 @@ index 0000000..c7cbeaf
 +            first = first.substring(0, 60) + "…";
 +        }
 +        return first;
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java
+new file mode 100644
+index 0000000..9c268d6
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java
+@@ -0,0 +1,176 @@
++package org.telegram.messenger;
++
++import android.app.Activity;
++import android.app.Application;
++import android.os.Bundle;
++
++import java.util.concurrent.atomic.AtomicInteger;
++
++/**
++ * Хранилище настроек «режима призрака». Значения читаются напрямую из
++ * MessagesController, поэтому всё держим на SharedPreferences без
++ * статического кэша: переключатель должен действовать сразу.
++ */
++public class ForkGhost {
++    private static final String PREFS = "fork_ghost";
++
++    private static final String KEY_ENABLED = "enabled";
++    private static final String KEY_READ = "block_read";
++    private static final String KEY_HISTORY = "block_history";
++    private static final String KEY_ONLINE = "block_online";
++    private static final String KEY_TYPING = "block_typing";
++    private static final String KEY_AUTO_OFFLINE = "auto_offline";
++
++    private static final AtomicInteger startedActivities = new AtomicInteger();
++    private static volatile boolean backgrounded;
++
++    private static boolean read(String key, boolean def) {
++        try {
++            return ApplicationLoader.applicationContext
++                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                    .getBoolean(key, def);
++        } catch (Throwable ignore) {
++            return def;
++        }
++    }
++
++    private static void write(String key, boolean value) {
++        ApplicationLoader.applicationContext
++                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                .edit()
++                .putBoolean(key, value)
++                .apply();
++    }
++
++    /** Главный переключатель: выключен — все остальные пункты игнорируются. */
++    public static boolean isEnabled() {
++        return read(KEY_ENABLED, false);
++    }
++
++    public static void setEnabled(boolean value) {
++        write(KEY_ENABLED, value);
++    }
++
++    // Дальше — «сырые» значения без учёта главного переключателя:
++    // так переключатели в настройках показывают сохранённое состояние.
++
++    public static boolean isBlockRead() {
++        return read(KEY_READ, true);
++    }
++
++    public static void setBlockRead(boolean value) {
++        write(KEY_READ, value);
++    }
++
++    public static boolean isBlockHistory() {
++        return read(KEY_HISTORY, true);
++    }
++
++    public static void setBlockHistory(boolean value) {
++        write(KEY_HISTORY, value);
++    }
++
++    public static boolean isBlockOnline() {
++        return read(KEY_ONLINE, false);
++    }
++
++    public static void setBlockOnline(boolean value) {
++        write(KEY_ONLINE, value);
++    }
++
++    public static boolean isBlockTyping() {
++        return read(KEY_TYPING, true);
++    }
++
++    public static void setBlockTyping(boolean value) {
++        write(KEY_TYPING, value);
++    }
++
++    public static boolean isAutoOffline() {
++        return read(KEY_AUTO_OFFLINE, false);
++    }
++
++    public static void setAutoOffline(boolean value) {
++        write(KEY_AUTO_OFFLINE, value);
++    }
++
++    /** Не отправлять прочтения: собеседник видит только «доставлено». */
++    public static boolean blockRead() {
++        return isEnabled() && read(KEY_READ, true);
++    }
++
++    /** Не качать историю с сервера и не отправлять «содержимое просмотрено». */
++    public static boolean blockHistory() {
++        return isEnabled() && read(KEY_HISTORY, true);
++    }
++
++    /** «Печатает…» не отправляется. */
++    public static boolean blockTyping() {
++        return isEnabled() && read(KEY_TYPING, true);
++    }
++
++    /**
++     * Полная скрытность: даже если отдельные пункты выключены, активность
++     * не отправляется. В этой сборке нет отдельного запроса статуса —
++     * Telegram считает «в сети» любую активность клиента.
++     */
++    public static boolean blockOnline() {
++        return isEnabled() && read(KEY_ONLINE, false);
++    }
++
++    /** Сразу «оффлайн» после сворачивания приложения. */
++    public static boolean autoOffline() {
++        return isEnabled() && read(KEY_AUTO_OFFLINE, false);
++    }
++
++    /** Никакой активности: ни прочтений, ни «печатает». */
++    public static boolean suppressActivity() {
++        return blockOnline() || (autoOffline() && backgrounded);
++    }
++
++    public static boolean isBackgrounded() {
++        return backgrounded;
++    }
++
++    public static void init(Application application) {
++        if (application == null) {
++            return;
++        }
++        application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
++            @Override
++            public void onActivityStarted(Activity activity) {
++                startedActivities.incrementAndGet();
++                backgrounded = false;
++            }
++
++            @Override
++            public void onActivityStopped(Activity activity) {
++                int left = startedActivities.decrementAndGet();
++                if (left <= 0) {
++                    startedActivities.set(0);
++                    backgrounded = true;
++                }
++            }
++
++            @Override
++            public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
++            }
++
++            @Override
++            public void onActivityResumed(Activity activity) {
++            }
++
++            @Override
++            public void onActivityPaused(Activity activity) {
++            }
++
++            @Override
++            public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
++            }
++
++            @Override
++            public void onActivityDestroyed(Activity activity) {
++            }
++        });
 +    }
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java
@@ -949,6 +1145,60 @@ index 6c37252..1ff451f 100644
  
      public static int PRESET_LOW = (
          FLAG_ANIMATED_EMOJI_CHAT_PREMIUM |
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+index 7a0b35b..adc1b85 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -11386,6 +11386,10 @@ public class MessagesController extends BaseController implements NotificationCe
+         if (action < 0 || action >= sendingTypings.length || dialogId == 0) {
+             return false;
+         }
++        // Режим призрака: «печатает…» не отправляем.
++        if (ForkGhost.blockTyping() || ForkGhost.suppressActivity()) {
++            return false;
++        }
+         final long selfId = UserConfig.getInstance(UserConfig.selectedAccount).getClientUserId();
+         if (dialogId == selfId) {
+             return false;
+@@ -11524,6 +11528,13 @@ public class MessagesController extends BaseController implements NotificationCe
+         if (BuildVars.LOGS_ENABLED && loaderLogger == null && mode == 0) {
+             loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
+         }
++        // Режим призрака: «не читать историю» — с сервера не качаем,
++        // показываем только то, что уже есть локально.
++        boolean ghostHistory = ForkGhost.blockHistory() || (ForkGhost.autoOffline() && ForkGhost.isBackgrounded());
++        if (ghostHistory && !fromCache) {
++            fromCache = true;
++            queryFromServer = false;
++        }
+         if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && (fromCache || DialogObject.isEncryptedDialog(dialogId))) {
+             getMessagesStorage().getMessages(dialogId, mergeDialogId, loadInfo, count, max_id, offset_date, minDate, classGuid, load_type, mode, threadMessageId, loadIndex, processMessages, isTopic, loaderLogger);
+         } else {
+@@ -14397,6 +14408,10 @@ public class MessagesController extends BaseController implements NotificationCe
+         if (messageObject.scheduled) {
+             return;
+         }
++        // Режим призрака: «просмотрено содержимое» не отправляем.
++        if (ForkGhost.blockHistory() || ForkGhost.suppressActivity()) {
++            return;
++        }
+         ArrayList<Integer> arrayList = new ArrayList<>();
+         if (messageObject.messageOwner.mentioned) {
+             getMessagesStorage().markMentionMessageAsRead(-messageObject.messageOwner.peer_id.channel_id, messageObject.getId(), messageObject.getDialogId());
+@@ -14557,6 +14572,13 @@ public class MessagesController extends BaseController implements NotificationCe
+     }
+ 
+     private void completeReadTask(ReadTask task) {
++        // Режим призрака: прочтения на сервер не отправляем.
++        if (ForkGhost.blockRead() || ForkGhost.suppressActivity()) {
++            if (BuildVars.LOGS_ENABLED) {
++                FileLog.d("ghost mode: read receipt skipped");
++            }
++            return;
++        }
+         if (task.replyId != 0 && task.monoForumPeerId == 0) {
+             TLRPC.TL_messages_readDiscussion req = new TLRPC.TL_messages_readDiscussion();
+             req.msg_id = (int) task.replyId;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
 index 39f493f..33534fb 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
@@ -968,6 +1218,236 @@ index 39f493f..33534fb 100644
      }
  
      public static boolean isAutoplayGifs() {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
+new file mode 100644
+index 0000000..a3f779c
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
+@@ -0,0 +1,224 @@
++package org.telegram.ui;
++
++import android.content.Context;
++import android.view.Gravity;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++import android.widget.Switch;
++
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++
++import org.telegram.messenger.AndroidUtilities;
++import org.telegram.messenger.ForkGhost;
++import org.telegram.messenger.LocaleController;
++import org.telegram.messenger.R;
++import org.telegram.ui.ActionBar.ActionBar;
++import org.telegram.ui.ActionBar.BaseFragment;
++import org.telegram.ui.ActionBar.Theme;
++import org.telegram.ui.Cells.TextInfoPrivacyCell;
++import org.telegram.ui.Cells.TextSettingsCell;
++import org.telegram.ui.Components.LayoutHelper;
++import org.telegram.ui.Components.RecyclerListView;
++
++/**
++ * «Настройки Huntergram» — список переключателей режима призрака.
++ * Каждый пункт сохраняется сразу, главный выключатель отключает остальные.
++ */
++public class ForkGhostActivity extends BaseFragment {
++    private static final int TYPE_SWITCH = 0;
++    private static final int TYPE_INFO = 1;
++
++    private static final int ROW_ENABLED = 0;
++    private static final int ROW_READ = 1;
++    private static final int ROW_HISTORY = 2;
++    private static final int ROW_ONLINE = 3;
++    private static final int ROW_TYPING = 4;
++    private static final int ROW_AUTO_OFFLINE = 5;
++    private static final int ROW_COUNT = 6;
++
++    private RecyclerListView listView;
++    private ListAdapter adapter;
++    private boolean enabled;
++
++    @Override
++    public View createView(Context context) {
++        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
++        actionBar.setTitle(LocaleController.getString(R.string.ForkHuntergramSettings));
++        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
++            @Override
++            public void onItemClick(int id) {
++                if (id == -1) {
++                    finishFragment();
++                }
++            }
++        });
++
++        FrameLayout frameLayout = new FrameLayout(context);
++        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
++        fragmentView = frameLayout;
++
++        listView = new RecyclerListView(context);
++        actionBar.setAdaptiveBackground(listView);
++        listView.setLayoutManager(new LinearLayoutManager(context));
++        listView.setVerticalScrollBarEnabled(false);
++        listView.setAdapter(adapter = new ListAdapter(context));
++        frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
++
++        refresh();
++        return fragmentView;
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        refresh();
++    }
++
++    private void refresh() {
++        enabled = ForkGhost.isEnabled();
++        if (adapter != null) {
++            adapter.notifyDataSetChanged();
++        }
++    }
++
++    private void toggle(final int row, boolean value) {
++        switch (row) {
++            case ROW_ENABLED: {
++                ForkGhost.setEnabled(value);
++                break;
++            }
++            case ROW_READ: {
++                ForkGhost.setBlockRead(value);
++                break;
++            }
++            case ROW_HISTORY: {
++                ForkGhost.setBlockHistory(value);
++                break;
++            }
++            case ROW_ONLINE: {
++                ForkGhost.setBlockOnline(value);
++                break;
++            }
++            case ROW_TYPING: {
++                ForkGhost.setBlockTyping(value);
++                break;
++            }
++            case ROW_AUTO_OFFLINE: {
++                ForkGhost.setAutoOffline(value);
++                break;
++            }
++        }
++        refresh();
++    }
++
++    private CharSequence title(int row) {
++        switch (row) {
++            case ROW_ENABLED: return LocaleController.getString(R.string.ForkGhostEnabled);
++            case ROW_READ: return LocaleController.getString(R.string.ForkGhostRead);
++            case ROW_HISTORY: return LocaleController.getString(R.string.ForkGhostHistory);
++            case ROW_ONLINE: return LocaleController.getString(R.string.ForkGhostOnline);
++            case ROW_TYPING: return LocaleController.getString(R.string.ForkGhostTyping);
++            case ROW_AUTO_OFFLINE: return LocaleController.getString(R.string.ForkGhostAutoOffline);
++        }
++        return "";
++    }
++
++    private boolean checked(int row) {
++        switch (row) {
++            case ROW_ENABLED: return ForkGhost.isEnabled();
++            case ROW_READ: return ForkGhost.isBlockRead();
++            case ROW_HISTORY: return ForkGhost.isBlockHistory();
++            case ROW_ONLINE: return ForkGhost.isBlockOnline();
++            case ROW_TYPING: return ForkGhost.isBlockTyping();
++            case ROW_AUTO_OFFLINE: return ForkGhost.isAutoOffline();
++        }
++        return false;
++    }
++
++    private class SwitchHolder extends RecyclerListView.Holder {
++        final Switch toggle;
++
++        SwitchHolder(View itemView, Switch toggle) {
++            super(itemView);
++            this.toggle = toggle;
++        }
++    }
++
++    private class ListAdapter extends RecyclerListView.SelectionAdapter {
++        private final Context context;
++
++        private ListAdapter(Context context) {
++            this.context = context;
++        }
++
++        @Override
++        public int getItemCount() {
++            return ROW_COUNT + 1;
++        }
++
++        @Override
++        public boolean isEnabled(RecyclerView.ViewHolder holder) {
++            return !(holder instanceof SwitchHolder);
++        }
++
++        @NonNull
++        @Override
++        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++            View item;
++            if (viewType == TYPE_SWITCH) {
++                FrameLayout container = new FrameLayout(context);
++                TextSettingsCell cell = new TextSettingsCell(context);
++                cell.setCanDisable(false);
++                cell.setText(LocaleController.getString(R.string.ForkGhostPlaceholder), true);
++                container.addView(cell, new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
++
++                Switch toggle = new Switch(context);
++                FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.END);
++                toggleParams.rightMargin = AndroidUtilities.dp(16);
++                container.addView(toggle, toggleParams);
++                item = container;
++                item.setLayoutParams(new RecyclerView.LayoutParams(
++                        RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++                return new SwitchHolder(item, toggle);
++            }
++            item = new TextInfoPrivacyCell(context);
++            item.setLayoutParams(new RecyclerView.LayoutParams(
++                    RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
++            return new RecyclerListView.Holder(item);
++        }
++
++        @Override
++        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
++            if (position == ROW_COUNT) {
++                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
++                cell.setText(enabled
++                        ? LocaleController.getString(R.string.ForkGhostInfo)
++                        : LocaleController.getString(R.string.ForkGhostOff));
++                return;
++            }
++            SwitchHolder switchHolder = (SwitchHolder) holder;
++            ((TextSettingsCell) ((FrameLayout) holder.itemView).getChildAt(0)).setText(title(position), true);
++            // Состояние выставляем до слушателя, иначе recycled-ячейка
++            // «щёлкнет» переключателем при прокрутке.
++            switchHolder.toggle.setOnCheckedChangeListener(null);
++            switchHolder.toggle.setChecked(checked(position));
++            switchHolder.toggle.setEnabled(enabled || position == ROW_ENABLED);
++            switchHolder.toggle.setAlpha(enabled || position == ROW_ENABLED ? 1f : 0.5f);
++            switchHolder.toggle.setOnCheckedChangeListener((button, isChecked) -> {
++                if (isChecked != checked(position)) {
++                    toggle(position, isChecked);
++                }
++            });
++        }
++
++        @Override
++        public int getItemViewType(int position) {
++            return position == ROW_COUNT ? TYPE_INFO : TYPE_SWITCH;
++        }
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginInstallActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkPluginInstallActivity.java
 new file mode 100644
 index 0000000..855e727
@@ -1628,7 +2108,7 @@ index 79abb08..e21cc49 100644
          items.add(Item.asSwitch(R.drawable.photo_star, LocaleController.getString(R.string.LiteOptionsParticles), LiteMode.FLAG_PARTICLES));
          items.add(Item.asInfo(""));
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-index b779126..daa7a08 100644
+index b779126..edb0fd3 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 @@ -69,6 +69,7 @@ import org.telegram.messenger.BirthdayController;
@@ -1659,7 +2139,7 @@ index b779126..daa7a08 100644
          items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
          items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
          items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
-@@ -887,7 +894,123 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
+@@ -887,7 +894,136 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                  presentFragment(new RoundVideoSettingsActivity());
                  break;
              }
@@ -1695,6 +2175,19 @@ index b779126..daa7a08 100644
 +        title.setLetterSpacing(0.05f);
 +        title.setPadding(dp(16), dp(14), dp(16), dp(6));
 +        card.addView(title, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
++
++        card.addView(createForkRow(context, 0xFF30D158, 0xFF1E9E45, R.drawable.fork_ic_ghost,
++                getString(R.string.ForkHuntergramSettings), "",
++                v -> presentSettingFragment(new ForkGhostActivity())));
++
++        View ghostDivider = new View(context);
++        ghostDivider.setBackgroundColor(Theme.getColor(Theme.key_divider, resourceProvider));
++        LinearLayout.LayoutParams ghostDividerParams = new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, 1);
++        ghostDividerParams.leftMargin = dp(52);
++        ghostDividerParams.rightMargin = dp(16);
++        ghostDividerParams.topMargin = dp(2);
++        ghostDividerParams.bottomMargin = dp(2);
++        card.addView(ghostDivider, ghostDividerParams);
 +
 +        card.addView(createForkRow(context, 0xFF4FA9F5, 0xFF2E7BD0, R.drawable.fork_ic_plugins,
 +                getString(R.string.ForkPlugins), "",
@@ -1805,6 +2298,29 @@ index 0000000..59b8086
 +    <path
 +        android:fillColor="#FFFFFFFF"
 +        android:pathData="M11,17.2h2v2h-2z" />
++</vector>
+diff --git a/TMessagesProj/src/main/res/drawable/fork_ic_ghost.xml b/TMessagesProj/src/main/res/drawable/fork_ic_ghost.xml
+new file mode 100644
+index 0000000..0eccd5f
+--- /dev/null
++++ b/TMessagesProj/src/main/res/drawable/fork_ic_ghost.xml
+@@ -0,0 +1,17 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <!-- Шлемот: силуэт без лица -->
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M12,2C7.6,2 4,5.6 4,10v12h4v-8h8v8h4V10c0,-4.4 -3.6,-8 -8,-8z" />
++    <!-- Прорезь для глаз -->
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M8.5,8.5h2.2v2.2h-2.2z" />
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M13.3,8.5h2.2v2.2h-2.2z" />
 +</vector>
 diff --git a/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml b/TMessagesProj/src/main/res/drawable/fork_ic_plugins.xml
 new file mode 100644
@@ -1925,7 +2441,7 @@ index 03d0ba3..7dcde5b 100644
      <string name="LanguageName">Português (Brasil)</string>
      <string name="English">Inglês</string>
 diff --git a/TMessagesProj/src/main/res/values-ru/strings.xml b/TMessagesProj/src/main/res/values-ru/strings.xml
-index 24c5629..9562b45 100644
+index 24c5629..ab7bf36 100644
 --- a/TMessagesProj/src/main/res/values-ru/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ru/strings.xml
 @@ -1,6 +1,6 @@
@@ -1936,7 +2452,7 @@ index 24c5629..9562b45 100644
      <string name="AppNameBeta">Telegram Beta</string>
      <string name="LanguageName">Русский</string>
      <string name="English">Английский</string>
-@@ -263,4 +263,29 @@
+@@ -263,4 +263,39 @@
      <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
      <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
      <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
@@ -1961,6 +2477,16 @@ index 24c5629..9562b45 100644
 +    <string name="ForkPluginDelete">Удалить плагин</string>
 +    <string name="ForkPluginDeleteConfirm">Удалить этот плагин? Его настройки будут сброшены.</string>
 +    <string name="ForkLastCrash">Последнее падение</string>
++    <string name="ForkHuntergramSettings">Настройки Huntergram</string>
++    <string name="ForkGhostEnabled">Режим призрака</string>
++    <string name="ForkGhostRead">Не читать сообщения</string>
++    <string name="ForkGhostHistory">Не читать истории</string>
++    <string name="ForkGhostOnline">Не отправлять «онлайн»</string>
++    <string name="ForkGhostTyping">Не отправлять «печатает»</string>
++    <string name="ForkGhostAutoOffline">Автоматический «оффлайн»</string>
++    <string name="ForkGhostInfo">Режим призрака скрывает вашу активность: сообщения остаются непрочитанными и прочтения не отправляются, история не скачивается, «печатает» не показывается, а в фоне приложение не обращается к серверу. Включайте только для своего аккаунта.</string>
++    <string name="ForkGhostOff">Режим призрака выключен. Включите его, чтобы скрывать активность.</string>
++    <string name="ForkGhostPlaceholder">Режим призрака</string>
 +    <string name="ForkCrashReport">Отчёт о падении</string>
 +    <string name="ForkLastLaunch">Последний запуск</string>
 +    <string name="ForkNoCrash">Ничего не записано. Если приложение закрывается, а эта запись остаётся пустой, значит падение произошло внутри нативной библиотеки и перехватить его не удалось.</string>
@@ -1980,7 +2506,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..d576473 100644
+index 1013bb6..63bbe5c 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -2000,7 +2526,7 @@ index 1013bb6..d576473 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,28 @@
+@@ -11235,4 +11236,38 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -2024,6 +2550,16 @@ index 1013bb6..d576473 100644
 +    <string name="ForkPluginDelete">Delete plugin</string>
 +    <string name="ForkPluginDeleteConfirm">Delete this plugin? Its settings will be removed.</string>
 +    <string name="ForkLastCrash">Last crash</string>
++    <string name="ForkHuntergramSettings">Huntergram settings</string>
++    <string name="ForkGhostEnabled">Ghost mode</string>
++    <string name="ForkGhostRead">Don't read messages</string>
++    <string name="ForkGhostHistory">Don't read history</string>
++    <string name="ForkGhostOnline">Don't show online</string>
++    <string name="ForkGhostTyping">Don't send typing</string>
++    <string name="ForkGhostAutoOffline">Automatic offline</string>
++    <string name="ForkGhostInfo">Ghost mode hides your activity. Messages stay unread and no read receipts are sent, history is not downloaded, typing is not shown, and the app stops talking to the server while it is in the background. Use it only for your own account.</string>
++    <string name="ForkGhostOff">Ghost mode is off. Turn it on to hide your activity.</string>
++    <string name="ForkGhostPlaceholder">Ghost mode</string>
 +    <string name="ForkCrashReport">Crash report</string>
 +    <string name="ForkLastLaunch">Last launch</string>
 +    <string name="ForkNoCrash">Nothing recorded. If the app closes and this entry stays empty, the crash happened inside a native library and could not be caught.</string>
