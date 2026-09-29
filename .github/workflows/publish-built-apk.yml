@@ -43,8 +43,14 @@ jobs:
           REPO: ${{ github.repository }}
           RUN: ${{ steps.which.outputs.run }}
         run: |
-          AID=$(gh api "repos/$REPO/actions/runs/$RUN/artifacts" --jq '.artifacts[0].id')
-          test -n "$AID" || { echo "::error::у прогона $RUN нет артефактов"; exit 1; }
+          # В /actions/runs/{id}/artifacts ждёт внутренний ID, а не номера
+          # прогона: подстановка 52 молча даёт 404. Сначала ищем ID.
+          RID=$(gh api "repos/$REPO/actions/runs?per_page=100" \
+            --jq "[.workflow_runs[] | select(.run_number == $RUN and .name == 'build-telegram-fork')][0].id // empty")
+          test -n "$RID" || { echo "::error::прогон $RUN не найден"; exit 1; }
+          AID=$(gh api "repos/$REPO/actions/runs/$RID/artifacts" --jq '.artifacts[0].id // empty')
+          test -n "$AID" || { echo "::error::у прогона $RUN (id $RID) нет артефактов"; exit 1; }
+          echo "  прогон $RUN, id $RID, артефакт $AID" | tee -a "$GITHUB_STEP_SUMMARY"
           gh api "repos/$REPO/actions/artifacts/$AID/zip" > /tmp/art.zip
           rm -rf /tmp/art && mkdir -p /tmp/art && unzip -o -q /tmp/art.zip -d /tmp/art
           APK=$(find /tmp/art -name '*.apk' | head -1)
