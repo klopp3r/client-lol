@@ -306,15 +306,18 @@ index 0000000..c5d8c90
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java
 new file mode 100644
-index 0000000..9c268d6
+index 0000000..52d349f
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,266 @@
 +package org.telegram.messenger;
 +
 +import android.app.Activity;
 +import android.app.Application;
 +import android.os.Bundle;
++
++import org.telegram.tgnet.ConnectionsManager;
++import org.telegram.tgnet.tl.TL_account;
 +
 +import java.util.concurrent.atomic.AtomicInteger;
 +
@@ -332,9 +335,18 @@ index 0000000..9c268d6
 +    private static final String KEY_ONLINE = "block_online";
 +    private static final String KEY_TYPING = "block_typing";
 +    private static final String KEY_AUTO_OFFLINE = "auto_offline";
++    private static final String KEY_ALWAYS_ONLINE = "always_online";
++    private static final String KEY_KEEP_ONLINE = "keep_online";
++
++    /** Сколько остаёмся «в сети» после сворачивания, если включено «не уходить сразу». */
++    private static final long KEEP_ONLINE_MINUTES = 15;
++
++    /** Официальный клиент повторяет updateStatus раз в ~55 секунд. */
++    private static final long PRESENCE_INTERVAL_MS = 50_000L;
 +
 +    private static final AtomicInteger startedActivities = new AtomicInteger();
 +    private static volatile boolean backgrounded;
++    private static volatile long backgroundedAt;
 +
 +    private static boolean read(String key, boolean def) {
 +        try {
@@ -435,8 +447,48 @@ index 0000000..9c268d6
 +        return isEnabled() && read(KEY_AUTO_OFFLINE, false);
 +    }
 +
++    /**
++     * Держать «в сети» после сворачивания, пока жив процесс. Официальный
++     * клиент отправляет updateStatus(offline=false), пока приложение на
++     * экране, и updateStatus(offline=true), когда оно уходит в фон. Здесь
++     * тот же запрос шлётся из таймера, поэтому собеседник видит «в сети»
++     * и после сворачивания.
++     */
++    public static boolean alwaysOnline() {
++        return isEnabled() && read(KEY_ALWAYS_ONLINE, false);
++    }
++
++    public static void setAlwaysOnline(boolean value) {
++        write(KEY_ALWAYS_ONLINE, value);
++        if (!value) {
++            // Выключили, пока приложение в фоне: нативный код уже отправил
++            // offline и ждать следующего цикла нельзя, иначе собеседник
++            // будет видеть «в сети» ещё до часа. Отправляем сразу.
++            sendPresence(true);
++        }
++    }
++
++    /** Не уходить в оффлайн сразу после сворачивания. */
++    public static boolean keepOnline() {
++        return isEnabled() && read(KEY_KEEP_ONLINE, false);
++    }
++
++    public static void setKeepOnline(boolean value) {
++        write(KEY_KEEP_ONLINE, value);
++    }
++
++    private static boolean withinKeepWindow() {
++        if (!keepOnline() || !backgrounded || backgroundedAt == 0) {
++            return false;
++        }
++        return System.currentTimeMillis() - backgroundedAt < KEEP_ONLINE_MINUTES * 60_000L;
++    }
++
 +    /** Никакой активности: ни прочтений, ни «печатает». */
 +    public static boolean suppressActivity() {
++        if (withinKeepWindow()) {
++            return false;
++        }
 +        return blockOnline() || (autoOffline() && backgrounded);
 +    }
 +
@@ -444,10 +496,47 @@ index 0000000..9c268d6
 +        return backgrounded;
 +    }
 +
++    /**
++     * Один запрос присутствия. Тот же метод, что официальный клиент
++     * отправляет каждые ~55 секунд, только здесь его шлём мы — нативный код
++     * о фоне знает и уходит в оффлайн сам.
++     */
++    private static void sendPresence(boolean offline) {
++        try {
++            TL_account.updateStatus request = new TL_account.updateStatus();
++            request.offline = offline;
++            ConnectionsManager.getInstance(0).sendRequest(request, (response, error) -> {
++            });
++        } catch (Throwable ignored) {
++        }
++    }
++
++    /**
++     * Пока приложение свернуто, но процесс жив, повторяем updateStatus.
++     * На переднем плане этим занимается нативный код — вмешиваться не надо.
++     */
++    private static void startPresenceTimer() {
++        AndroidUtilities.runOnUIThread(() -> {
++            AndroidUtilities.cancelRunOnUIThread(presenceRunnable);
++            AndroidUtilities.runOnUIThread(presenceRunnable);
++        });
++    }
++
++    private static final Runnable presenceRunnable = new Runnable() {
++        @Override
++        public void run() {
++            if (alwaysOnline() && backgrounded && !ApplicationLoader.isScreenOn) {
++                sendPresence(false);
++            }
++            AndroidUtilities.runOnUIThread(this, PRESENCE_INTERVAL_MS);
++        }
++    };
++
 +    public static void init(Application application) {
 +        if (application == null) {
 +            return;
 +        }
++        startPresenceTimer();
 +        application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
 +            @Override
 +            public void onActivityStarted(Activity activity) {
@@ -461,6 +550,7 @@ index 0000000..9c268d6
 +                if (left <= 0) {
 +                    startedActivities.set(0);
 +                    backgrounded = true;
++                    backgroundedAt = System.currentTimeMillis();
 +                }
 +            }
 +
@@ -2225,10 +2315,10 @@ index 0000000..7bd0152
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
 new file mode 100644
-index 0000000..88a03cd
+index 0000000..c5dd966
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,240 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -2268,7 +2358,9 @@ index 0000000..88a03cd
 +    private static final int ROW_ONLINE = 3;
 +    private static final int ROW_TYPING = 4;
 +    private static final int ROW_AUTO_OFFLINE = 5;
-+    private static final int ROW_COUNT = 6;
++    private static final int ROW_ALWAYS_ONLINE = 6;
++    private static final int ROW_KEEP_ONLINE = 7;
++    private static final int ROW_COUNT = 8;
 +
 +    private RecyclerListView listView;
 +    private ListAdapter adapter;
@@ -2343,6 +2435,14 @@ index 0000000..88a03cd
 +                ForkGhost.setAutoOffline(value);
 +                break;
 +            }
++            case ROW_ALWAYS_ONLINE: {
++                ForkGhost.setAlwaysOnline(value);
++                break;
++            }
++            case ROW_KEEP_ONLINE: {
++                ForkGhost.setKeepOnline(value);
++                break;
++            }
 +        }
 +        refresh();
 +    }
@@ -2355,6 +2455,8 @@ index 0000000..88a03cd
 +            case ROW_ONLINE: return LocaleController.getString(R.string.ForkGhostOnline);
 +            case ROW_TYPING: return LocaleController.getString(R.string.ForkGhostTyping);
 +            case ROW_AUTO_OFFLINE: return LocaleController.getString(R.string.ForkGhostAutoOffline);
++            case ROW_ALWAYS_ONLINE: return LocaleController.getString(R.string.ForkGhostAlwaysOnline);
++            case ROW_KEEP_ONLINE: return LocaleController.getString(R.string.ForkGhostKeepOnline);
 +        }
 +        return "";
 +    }
@@ -2367,6 +2469,8 @@ index 0000000..88a03cd
 +            case ROW_ONLINE: return ForkGhost.isBlockOnline();
 +            case ROW_TYPING: return ForkGhost.isBlockTyping();
 +            case ROW_AUTO_OFFLINE: return ForkGhost.isAutoOffline();
++            case ROW_ALWAYS_ONLINE: return ForkGhost.alwaysOnline();
++            case ROW_KEEP_ONLINE: return ForkGhost.keepOnline();
 +        }
 +        return false;
 +    }
@@ -3988,7 +4092,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..24317bb 100644
+index 1013bb6..8e35804 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -4008,7 +4112,7 @@ index 1013bb6..24317bb 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,52 @@
+@@ -11235,4 +11236,54 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -4039,7 +4143,9 @@ index 1013bb6..24317bb 100644
 +    <string name="ForkGhostOnline">Don\'t show online</string>
 +    <string name="ForkGhostTyping">Don\'t send typing</string>
 +    <string name="ForkGhostAutoOffline">Automatic offline</string>
-+    <string name="ForkGhostInfo">Ghost mode hides your activity. Messages stay unread and no read receipts are sent, history is not downloaded, typing is not shown, and the app stops talking to the server while it is in the background. Use it only for your own account.</string>
++    <string name="ForkGhostAlwaysOnline">Always online</string>
++    <string name="ForkGhostKeepOnline">Stay online after closing</string>
++    <string name="ForkGhostInfo">Ghost mode hides your activity. Messages stay unread and no read receipts are sent, history is not downloaded, typing is not shown, and the app stops talking to the server while it is in the background. Always online keeps the status online while the process lives; staying online after closing holds it for 15 minutes after you leave the app. Use it only for your own account.</string>
 +    <string name="ForkGhostOff">Ghost mode is off. Turn it on to hide your activity.</string>
 +    <string name="ForkGhostPlaceholder">Ghost mode</string>
 +    <string name="ForkCategories">Categories</string>
