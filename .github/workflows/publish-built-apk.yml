@@ -1,0 +1,64 @@
+name: publish-built-apk
+
+# Публикует в релиз APK, уже собранный в одном из прогонов.
+#
+# Зачем отдельный файл: с машины, где ведётся разработка, выгрузка 42 МБ
+# в релиз не проходит — входящие соединения работают, исходящие рвутся.
+# Артефакт прогона при этом лежит на стороне GitHub, и залить его оттуда
+# можно. Триггер — пуш: вручную workflow_dispatch недоступен, у токена
+# нет Actions: write.
+#
+# Как пользоваться: записать номер прогона в файл PROMOTE_RUN, запушить.
+# Файл удаляется самим собой после публикации не получится — он в
+# репозитории, поэтому после успеха его нужно убрать коммитом.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - PROMOTE_RUN
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Прочитать номер прогона
+        id: which
+        run: |
+          RUN=$(tr -d '[:space:]' < PROMOTE_RUN)
+          echo "публикуем артефакт прогона $RUN" >> "$GITHUB_STEP_SUMMARY"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Скачать артефакт и опубликовать
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ steps.which.outputs.run }}
+        run: |
+          AID=$(gh api "repos/$REPO/actions/runs/$RUN/artifacts" --jq '.artifacts[0].id')
+          test -n "$AID" || { echo "::error::у прогона $RUN нет артефактов"; exit 1; }
+          gh api "repos/$REPO/actions/artifacts/$AID/zip" > /tmp/art.zip
+          rm -rf /tmp/art && mkdir -p /tmp/art && unzip -o -q /tmp/art.zip -d /tmp/art
+          APK=$(find /tmp/art -name '*.apk' | head -1)
+          test -n "$APK" || { echo "::error::в артефакте нет APK"; exit 1; }
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$APK")
+          echo "  APK $SIZE байт, sha256 $SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          # Те же проверки, что и при обычной сборке: публиковать APK,
+          # в котором нет плагинов, бессмысленно.
+          for want in '"id":"peek_online"' '"id":"streams"' '"id":"word_filters"'; do
+            unzip -p "$APK" 'res/*' 2>/dev/null | grep -qa -- "$want" || {
+              echo "::error::в APK нет «$want» — публиковать нечего"; exit 1; }
+          done
+          echo "  три плагина внутри, публикую" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          cp "$APK" /tmp/telegram-fork-arm64.apk
+          gh release view v12.10.5-fork -R "$REPO" >/dev/null 2>&1 || {
+            echo "::error::релиза v12.10.5-fork нет"; exit 1; }
+          gh release upload v12.10.5-fork /tmp/telegram-fork-arm64.apk --clobber -R "$REPO"
+          gh release view v12.10.5-fork -R "$REPO" --json url -q .url | tee -a "$GITHUB_STEP_SUMMARY"
