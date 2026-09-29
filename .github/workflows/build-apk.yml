@@ -2,6 +2,11 @@ name: build-telegram-fork
 
 on:
   workflow_dispatch:
+    inputs:
+      promote_run:
+        description: 'Номер прогона, чей артефакт опубликовать (пусто — обычная сборка)'
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -418,6 +423,34 @@ jobs:
           done
           test "$RAW" -ge 3 || { echo "::error::ожидалось не меньше 3 файлов .js, найдено $RAW"; FAILED=1; }
           test "$FAILED" = 0 || exit 1
+      - name: Publish APK from a finished run
+        # Сборка с этого сервера не проходит: входящие соединения работают,
+        # а выгрузка 42 МБ обрывается. Артефакт уже лежит в прогонах, значит
+        # публиковать его надо на стороне CI.
+        if: ${{ inputs.promote_run != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ inputs.promote_run }}
+        run: |
+          AID=$(gh api "repos/$REPO/actions/runs/$RUN/artifacts" --jq '.artifacts[0].id')
+          test -n "$AID" || { echo "::error::у прогона $RUN нет артефактов"; exit 1; }
+          gh api "repos/$REPO/actions/artifacts/$AID/zip" > /tmp/art.zip
+          rm -rf /tmp/art && mkdir -p /tmp/art && unzip -o -q /tmp/art.zip -d /tmp/art
+          APK=$(find /tmp/art -name '*.apk' | head -1)
+          test -n "$APK" || { echo "::error::в артефакте нет APK"; exit 1; }
+          echo "  APK: $APK ($(stat -c%s "$APK") байт), sha256 $(sha256sum "$APK" | cut -c1-16)"
+          for want in '"id":"peek_online"' '"id":"streams"' '"id":"word_filters"'; do
+            unzip -p "$APK" 'res/*' 2>/dev/null | grep -qa -- "$want" || {
+              echo "::error::в APK нет «$want» — публиковать нечего"; exit 1; }
+          done
+          echo "  все три плагина внутри"
+          cp "$APK" /tmp/telegram-fork-arm64.apk
+          gh release upload v12.10.5-fork /tmp/telegram-fork-arm64.apk --clobber -R "$REPO" \
+            --notes "Huntergram arm64, сборка прогона $RUN"
+          echo "--- ссылка ---"
+          gh release view v12.10.5-fork -R "$REPO" --json url -q .url
+
       - name: Publish APK to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
