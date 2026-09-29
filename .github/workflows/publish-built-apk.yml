@@ -26,6 +26,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Прочитать номер прогона
         id: which
         run: |
