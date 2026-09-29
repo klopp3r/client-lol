@@ -138,14 +138,17 @@ index 083d15e..f90427d 100644
              if (view == null || view.getContext() == null) return;
              if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-index 5405be7..0ac6638 100644
+index 5405be7..2a9222a 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-@@ -282,6 +282,7 @@ public class ApplicationLoader extends Application {
+@@ -282,6 +282,10 @@ public class ApplicationLoader extends Application {
      @Override
      public void onCreate() {
          applicationLoaderInstance = this;
 +        ForkGhost.init(this);
++        // Ловим падения с самого старта, иначе отчёт о падении остаётся
++        // пустым для всего, что случилось до открытия настроек.
++        ForkDiagnostics.install(this);
          try {
              applicationContext = getApplicationContext();
          } catch (Throwable ignore) {
@@ -177,10 +180,10 @@ index 4ed7e64..6e4881f 100644
          if (ApplicationLoader.applicationContext != null) {
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java
 new file mode 100644
-index 0000000..c7cbeaf
+index 0000000..c5d8c90
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,104 @@
 +package org.telegram.messenger;
 +
 +import android.content.Context;
@@ -209,11 +212,12 @@ index 0000000..c7cbeaf
 +
 +    public static synchronized void install(Context context) {
 +        final Context appContext = context.getApplicationContext();
-+        prefs(appContext).edit().putLong(KEY_START, System.currentTimeMillis()).apply();
 +        if (installed) {
 +            return;
 +        }
 +        installed = true;
++        // Время запуска процесса, а не момент открытия настроек.
++        prefs(appContext).edit().putLong(KEY_START, System.currentTimeMillis()).apply();
 +        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
 +        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
 +            try {
@@ -1158,10 +1162,10 @@ index 0000000..1274aa5
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
 new file mode 100644
-index 0000000..eb9de66
+index 0000000..8e1eca2
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,108 @@
 +package org.telegram.messenger;
 +
 +/**
@@ -1176,22 +1180,31 @@ index 0000000..eb9de66
 +    private static final String KEY_VIBRATION = "vibration";
 +    private static final String KEY_ANIMATION = "animation_speed";
 +
++    private static android.content.SharedPreferences prefs() {
++        android.content.Context context = ApplicationLoader.applicationContext;
++        if (context == null) {
++            return null;
++        }
++        return context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE);
++    }
++
 +    private static boolean read(String key, boolean def) {
 +        try {
-+            return ApplicationLoader.applicationContext
-+                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-+                    .getBoolean(key, def);
++            android.content.SharedPreferences p = prefs();
++            return p == null ? def : p.getBoolean(key, def);
 +        } catch (Throwable ignore) {
 +            return def;
 +        }
 +    }
 +
 +    private static void write(String key, boolean value) {
-+        ApplicationLoader.applicationContext
-+                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-+                .edit()
-+                .putBoolean(key, value)
-+                .apply();
++        try {
++            android.content.SharedPreferences p = prefs();
++            if (p != null) {
++                p.edit().putBoolean(key, value).apply();
++            }
++        } catch (Throwable ignore) {
++        }
 +    }
 +
 +    /** 1234 показываем как «1234», а не «1.2K». */
@@ -1230,20 +1243,21 @@ index 0000000..eb9de66
 +    /** Скорость анимаций: как в системе / медленно / обычно / быстро / выкл. */
 +    public static int animationSpeed() {
 +        try {
-+            return ApplicationLoader.applicationContext
-+                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-+                    .getInt(KEY_ANIMATION, ANIM_SYSTEM);
++            android.content.SharedPreferences p = prefs();
++            return p == null ? ANIM_SYSTEM : p.getInt(KEY_ANIMATION, ANIM_SYSTEM);
 +        } catch (Throwable ignore) {
 +            return ANIM_SYSTEM;
 +        }
 +    }
 +
 +    public static void setAnimationSpeed(int value) {
-+        ApplicationLoader.applicationContext
-+                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-+                .edit()
-+                .putInt(KEY_ANIMATION, value)
-+                .apply();
++        try {
++            android.content.SharedPreferences p = prefs();
++            if (p != null) {
++                p.edit().putInt(KEY_ANIMATION, value).apply();
++            }
++        } catch (Throwable ignore) {
++        }
 +    }
 +
 +    /**
@@ -1376,7 +1390,7 @@ index 39f493f..33534fb 100644
  
      public static boolean isAutoplayGifs() {
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
-index ee6b470..bf03154 100644
+index ee6b470..1c9911c 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
 @@ -60,6 +60,7 @@ import androidx.core.graphics.ColorUtils;
@@ -1404,23 +1418,31 @@ index ee6b470..bf03154 100644
          setGlowColor(getThemedColor(Theme.key_actionBarDefault));
          selectorDrawable = Theme.getSelectorDrawable(getThemedColor(Theme.key_listSelector), false);
          selectorDrawable.setCallback(this);
-@@ -3357,9 +3361,25 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
+@@ -3357,9 +3361,33 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
  //        }
      }
  
-+    /** Длительности зависят от настройки «Скорость анимаций». */
++    /**
++     * Длительности зависят от настройки «Скорость анимаций».
++     * Меняем только тайминги. Обращаться к setSupportsChangeAnimations()
++     * здесь нельзя: этот флаг меняет не скорость, а поведение аниматора,
++     * и вместе с notifyDataSetChanged() приводил к падению приложения
++     * при переключении настроек.
++     */
 +    private void tuneItemAnimator(ItemAnimator animator) {
-+        if (!(animator instanceof DefaultItemAnimator)) {
-+            return;
++        try {
++            if (!(animator instanceof DefaultItemAnimator)) {
++                return;
++            }
++            int[] d = ForkTuning.listAnimationDurations();
++            DefaultItemAnimator def = (DefaultItemAnimator) animator;
++            def.setAddDuration(Math.max(0, d[0]));
++            def.setRemoveDuration(Math.max(0, d[1]));
++            def.setMoveDuration(Math.max(0, d[2]));
++            def.setChangeDuration(Math.max(0, d[3]));
++        } catch (Throwable ignore) {
++            // Настройка скорости не должна ломать отрисовку списка.
 +        }
-+        int[] d = ForkTuning.listAnimationDurations();
-+        int add = d[0], remove = d[1], move = d[2], change = d[3];
-+        DefaultItemAnimator def = (DefaultItemAnimator) animator;
-+        def.setAddDuration(add);
-+        def.setRemoveDuration(remove);
-+        def.setMoveDuration(move);
-+        def.setChangeDuration(change);
-+        def.setSupportsChangeAnimations(false);
 +    }
 +
      @Override
