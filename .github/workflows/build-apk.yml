@@ -381,6 +381,15 @@ jobs:
           fi
           echo "::notice title=Ресурсы в порядке::Все строки форка и контрольные строки на месте ($SIZE байт)"
 
+          for want in peek_online streams word_filters '@fork-plugin'; do
+            if unzip -p "$APK" classes.dex classes2.dex classes3.dex classes4.dex 2>/dev/null | grep -qa "$want"; then
+              echo "  нашлось: $want"
+            else
+              echo "::error::в APK нет «$want»: встроенные плагины не попали в сборку"
+              FAILED=1
+            fi
+          done
+          test "${FAILED:-0}" = 0 || exit 1
       - name: Publish APK to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

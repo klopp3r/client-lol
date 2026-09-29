@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..b455ba9 100644
+index 6801688..5ee6238 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,35 @@
+@@ -53,4 +53,36 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -55,6 +55,7 @@ index 6801688..b455ba9 100644
 +# Классы форка: имена нужны ClassShutter (песочница) и обработчику падений.
 +-keep class org.telegram.messenger.ForkPlugin { *; }
 +-keep class org.telegram.messenger.ForkHooks { *; }
++-keep class org.telegram.messenger.ForkBundled { *; }
 +-keep class org.telegram.messenger.ForkPluginApi { *; }
 +-keep class org.telegram.messenger.ForkPluginManager { *; }
 +-keep class org.telegram.messenger.ForkDiagnostics { *; }
@@ -359,6 +360,35 @@ index 4ed7e64..6e4881f 100644
  
      static {
          if (ApplicationLoader.applicationContext != null) {
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkBundled.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkBundled.java
+new file mode 100644
+index 0000000..a28dfc7
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkBundled.java
+@@ -0,0 +1,23 @@
++package org.telegram.messenger;
++
++/**
++ * Встроенные плагины. Тексты лежат в коде, а не в assets: слияние ассетов
++ * их теряло, и плагины просто не появлялись в списке. Источник правок —
++ * TMessagesProj/src/main/assets/fork-plugins/, оттуда генерируется этот файл.
++ */
++public final class ForkBundled {
++    public static final String[] NAMES = {
++        "peek_online.plugin",
++        "streams.plugin",
++        "word_filters.plugin"
++    };
++
++    public static final String[] SOURCES = {
++        "/*\n * Пик онлайна\n * Меняет текст статуса у собеседников: вместо «онлайн» показывает свой текст.\n * Работает через крюк статуса, поэтому меняются все экраны сразу.\n */\n@fork-plugin\n{\"id\":\"peek_online\",\"name\":\"Пик онлайна\",\"description\":\"Показывает свой текст вместо «онлайн»\",\"author\":\"Huntergram\",\"version\":\"1.0\"}\n\n(function () {\n    var REPLACEMENT = 'последний раз в сети';\n\n    // «онлайн» в любом регистре и с заглавной буквы\n    var ONLINE = /^(онлайн|online)$/i;\n\n    function isOnlineText(text) {\n        if (!text) {\n            return false;\n        }\n        return ONLINE.test(String(text).replace(/^\\s+|\\s+$/g, ''));\n    }\n\n    fork.onStatusText(function (userId, text) {\n        if (!isOnlineText(text)) {\n            return text;\n        }\n        return fork.getText('replacement', REPLACEMENT);\n    });\n\n    fork.addSection('Пик онлайна');\n    fork.addText('replacement', 'Что показывать вместо «онлайн»', REPLACEMENT,\n        'Плагин не знает время последнего захода, поэтому не придумывает его. Если напишете «был(а) 5 минут назад», это будет правда только для вас.');\n    fork.addInfo('Подменяется только текст «онлайн». Цвет и зелёная точка остаются как в Telegram.');\n    fork.addInfo('Проверка срабатываний: ' + fork.calls('statusText'));\n})();\n",
++        "/*\n * Режим потоков\n * Убирает из списка диалогов то, что сейчас не нужно: прочитанное, группы,\n * каналы — на выбор. Внутренние подсчёты Telegram не затрагиваются, прячется\n * только отображение.\n */\n@fork-plugin\n{\"id\":\"streams\",\"name\":\"Режим потоков\",\"description\":\"Прячет прочитанные диалоги, группы и каналы\",\"author\":\"Huntergram\",\"version\":\"1.0\"}\n\n(function () {\n    var USER = 1;\n    var GROUP = 2;\n    var CHANNEL = 3;\n\n    function kind(peerType) {\n        if (peerType === GROUP || peerType === CHANNEL) {\n            return 'collective';\n        }\n        if (peerType === USER) {\n            return 'user';\n        }\n        return 'other';\n    }\n\n    fork.shouldShowDialog(function (chatId, peerId, peerType, unreadCount, read) {\n        if (!fork.getFlag('enabled', true)) {\n            return true;\n        }\n        if (fork.getFlag('onlyUnread', false)) {\n            return !read || (unreadCount || 0) > 0;\n        }\n        if (fork.getFlag('hideRead', false) && read && (unreadCount || 0) === 0) {\n            return false;\n        }\n        if (fork.getFlag('hideCollective', false) && kind(peerType) === 'collective') {\n            return false;\n        }\n        if (fork.getFlag('hideUsers', false) && kind(peerType) === 'user') {\n            return false;\n        }\n        return true;\n    });\n\n    fork.addSection('Режим потоков');\n    fork.addSwitch('enabled', 'Включить', true);\n    fork.addSwitch('onlyUnread', 'Только непрочитанные', false,\n        'Оставляет диалоги, где есть непрочитанные сообщения. Всё остальное скрывает.');\n    fork.addSwitch('hideRead', 'Прятать прочитанные', false);\n    fork.addSwitch('hideCollective', 'Прятать группы и каналы', false);\n    fork.addSwitch('hideUsers', 'Прятать личные чаты', false);\n    fork.addInfo('Прячется только список. Непрочитанные счётчики и push Telegram считает как обычно.');\n    fork.addInfo('Режим «только непрочитанные» может скрыть весь список — это ожидаемо.');\n    fork.addInfo('Проверено диалогов: ' + fork.calls('dialog'));\n})();\n",
++        "/*\n * Фильтры по словам\n * Если в тексте входящего сообщения есть запрещённое слово, уведомление\n * молчит. Само сообщение в чат приходит как обычно — это не удаление и не\n * скрытие диалога.\n */\n@fork-plugin\n{\"id\":\"word_filters\",\"name\":\"Фильтры по словам\",\"description\":\"Заглушает уведомления по запрещённым словам\",\"author\":\"Huntergram\",\"version\":\"1.0\"}\n\n(function () {\n    // Сообщение считается личным чатом, если собеседник совпадает с чатом\n    function isPrivate(chatId, fromId) {\n        return !!chatId && !!fromId && String(chatId) === String(fromId);\n    }\n\n    function wordList() {\n        var raw = fork.getText('words', '');\n        if (!raw) {\n            return [];\n        }\n        var out = [];\n        var parts = String(raw).split(/[,;\\n]+/);\n        for (var i = 0; i < parts.length; i++) {\n            var w = parts[i].replace(/^\\s+|\\s+$/g, '').toLowerCase();\n            if (w.length > 1) {\n                out.push(w);\n            }\n        }\n        return out;\n    }\n\n    function contains(text, word) {\n        return String(text).toLowerCase().indexOf(word) >= 0;\n    }\n\n    fork.shouldNotify(function (chatId, fromId, messageText) {\n        if (!fork.getFlag('enabled', true)) {\n            return true;\n        }\n        if (!isPrivate(chatId, fromId) || !messageText) {\n            return true;\n        }\n        var words = wordList();\n        for (var i = 0; i < words.length; i++) {\n            if (contains(messageText, words[i])) {\n                return false;\n            }\n        }\n        return true;\n    });\n\n    fork.addSection('Фильтры по словам');\n    fork.addSwitch('enabled', 'Включить', true, 'Пока выключено, уведомления приходят как обычно.');\n    fork.addText('words', 'Запрещённые слова', '',\n        'Через запятую. Регистр не важен. Учитываются слова от 2 символов.');\n    fork.addInfo('Глушится только уведомление. Сообщение всё равно появится в чате.');\n    fork.addInfo('Работает только в личных чатах, в группах и каналах — нет.');\n    fork.addInfo('Проверено уведомлений: ' + fork.calls('notify'));\n})();\n"
++    };
++
++    private ForkBundled() {
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkDiagnostics.java
 new file mode 100644
 index 0000000..c5d8c90
@@ -1214,10 +1244,10 @@ index 0000000..a79d875
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
 new file mode 100644
-index 0000000..09ae8e0
+index 0000000..0dc08ec
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
-@@ -0,0 +1,610 @@
+@@ -0,0 +1,598 @@
 +package org.telegram.messenger;
 +
 +import android.content.SharedPreferences;
@@ -1432,36 +1462,24 @@ index 0000000..09ae8e0
 +        }
 +    }
 +
-+    /** Скопировать встроенные в APK плагины, если их ещё нет на устройстве. */
++    /**
++     * Записать встроенные плагины, если их ещё нет на устройстве. Тексты
++     * берём из ForkBundled, а не из assets: там их теряло слияние ресурсов.
++     */
 +    private void seedBundled() {
 +        try {
-+            String[] names = ApplicationLoader.applicationContext.getAssets().list("fork-plugins");
-+            if (names == null) {
-+                return;
-+            }
-+            for (int i = 0; i < names.length; i++) {
-+                if (pluginExtension(names[i]) == null) {
++            for (int i = 0; i < ForkBundled.NAMES.length; i++) {
++                String name = ForkBundled.NAMES[i];
++                File target = new File(dir(), name);
++                if (target.exists() || target.length() > 0) {
 +                    continue;
 +                }
-+                File target = new File(dir(), names[i]);
-+                if (target.exists()) {
-+                    continue;
-+                }
-+                InputStream in = ApplicationLoader.applicationContext.getAssets().open("fork-plugins/" + names[i]);
++                FileOutputStream out = new FileOutputStream(target);
 +                try {
-+                    FileOutputStream out = new FileOutputStream(target);
-+                    try {
-+                        byte[] buffer = new byte[4096];
-+                        int read;
-+                        while ((read = in.read(buffer)) > 0) {
-+                            out.write(buffer, 0, read);
-+                        }
-+                        out.flush();
-+                    } finally {
-+                        out.close();
-+                    }
++                    out.write(ForkBundled.SOURCES[i].getBytes("UTF-8"));
++                    out.flush();
 +                } finally {
-+                    in.close();
++                    out.close();
 +                }
 +            }
 +        } catch (Throwable ignore) {
