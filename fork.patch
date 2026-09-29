@@ -488,14 +488,16 @@ index 0000000..9c268d6
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkHooks.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkHooks.java
 new file mode 100644
-index 0000000..f756013
+index 0000000..43697ae
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkHooks.java
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,296 @@
 +package org.telegram.messenger;
 +
 +import org.mozilla.javascript.Function;
 +import org.mozilla.javascript.Scriptable;
++
++import org.telegram.tgnet.TLRPC;
 +
 +import java.util.ArrayList;
 +import java.util.Collections;
@@ -716,12 +718,12 @@ index 0000000..f756013
 +     * если фильтровать нечего, и копию — если что-то отфильтровано.
 +     * Внутренние потребители (подсчёт непрочитанного) сюда не попадают.
 +     */
-+    public static java.util.List<TLRPC.Dialog> filterDialogs(java.util.List<TLRPC.Dialog> source) {
++    public static ArrayList<TLRPC.Dialog> filterDialogs(ArrayList<TLRPC.Dialog> source) {
 +        if (source == null || source.isEmpty() || !systemOn() || SHOULD_SHOW_DIALOG.isEmpty()) {
 +            return source;
 +        }
 +        try {
-+            java.util.List<TLRPC.Dialog> copy = new ArrayList<>(source.size());
++            ArrayList<TLRPC.Dialog> copy = new ArrayList<>(source.size());
 +            for (int i = 0; i < source.size(); i++) {
 +                TLRPC.Dialog d = source.get(i);
 +                if (d == null) {
@@ -1962,7 +1964,7 @@ index 7a0b35b..f4ac48f 100644
              TLRPC.TL_messages_readDiscussion req = new TLRPC.TL_messages_readDiscussion();
              req.msg_id = (int) task.replyId;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java b/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
-index d6901d2..3b5955f 100644
+index d6901d2..41376b7 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
 @@ -1365,6 +1365,11 @@ public class NotificationsController extends BaseController implements Notificat
@@ -1971,7 +1973,7 @@ index d6901d2..3b5955f 100644
      private void appendMessage(MessageObject messageObject) {
 +        // Фильтр уведомлений плагина. Само сообщение в чат приходит как обычно,
 +        // молчит только пуш-уведомление.
-+        if (!ForkHooks.shouldNotifyForMessage(messageObject.getDialogId(), messageObject.getSenderId(), messageObject.message == null ? null : messageObject.message.text)) {
++        if (!ForkHooks.shouldNotifyForMessage(messageObject.getDialogId(), messageObject.getSenderId(), messageObject.messageText == null ? null : messageObject.messageText.toString())) {
 +            return;
 +        }
          for (int i = 0; i < pushMessages.size(); i++) {
