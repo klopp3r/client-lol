@@ -1841,7 +1841,7 @@ index 0000000..d63cc12
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPresenceService.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPresenceService.java
 new file mode 100644
-index 0000000..cc84011
+index 0000000..9fadc54
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPresenceService.java
 @@ -0,0 +1,121 @@
@@ -1960,11 +1960,76 @@ index 0000000..cc84011
 +        @Override
 +        public void run() {
 +            if (ForkGhost.alwaysOnline()) {
-+                ForkGhost.sendPresenceOnce();
++                ForkGhost.sendPresenceOnce(false);
 +            }
 +            AndroidUtilities.runOnUIThread(this, INTERVAL_MS);
 +        }
 +    };
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPrivacy.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPrivacy.java
+new file mode 100644
+index 0000000..9b9a9ca
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPrivacy.java
+@@ -0,0 +1,59 @@
++package org.telegram.messenger;
++
++/**
++ * Переключатели приватности: то, что в AyuGram спрятано в разделе
++ * «Anti-Delete» и «No Forward Origin». Значения читаются прямо из
++ * MessagesController и ChatMessageCell, поэтому кэша нет — переключатель
++ * должен действовать сразу.
++ */
++public class ForkPrivacy {
++    private static final String PREFS = "fork_privacy";
++
++    private static final String KEY_KEEP_DELETED = "keep_deleted";
++    private static final String KEY_HIDE_FORWARD = "hide_forward_origin";
++
++    private static boolean read(String key, boolean def) {
++        try {
++            return ApplicationLoader.applicationContext
++                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                    .getBoolean(key, def);
++        } catch (Throwable ignored) {
++            return def;
++        }
++    }
++
++    private static void write(String key, boolean value) {
++        try {
++            ApplicationLoader.applicationContext
++                    .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
++                    .edit().putBoolean(key, value).apply();
++        } catch (Throwable ignored) {
++        }
++    }
++
++    /**
++     * Не применять входящие удаления: сообщение, удалённое собеседником,
++     * остаётся в диалоге.
++     *
++     * Ограничение, о котором стоит знать: счётчик pts при этом всё равно
++     * двигается, и на следующей синхронизации сервер сообщит, что таких
++     * сообщений нет. Как и в AyuGram, удержание держится на том, что
++     * клиент не вычеркивает их у себя, а не на серверной правде.
++     */
++    public static boolean keepDeleted() {
++        return read(KEY_KEEP_DELETED, false);
++    }
++
++    public static void setKeepDeleted(boolean value) {
++        write(KEY_KEEP_DELETED, value);
++    }
++
++    /** Прятать шапку «Переслано от …» вместе с именем источника. */
++    public static boolean hideForwardOrigin() {
++        return read(KEY_HIDE_FORWARD, false);
++    }
++
++    public static void setHideForwardOrigin(boolean value) {
++        write(KEY_HIDE_FORWARD, value);
++    }
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
 new file mode 100644
@@ -2140,7 +2205,7 @@ index 245a5ab..b0771a3 100644
              if (user.status instanceof TLRPC.TL_userStatusRecently) {
                  user.status.expires = user.status.by_me ? -1000 : -100;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
-index 7a0b35b..f4ac48f 100644
+index 7a0b35b..ba768de 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 @@ -10524,7 +10524,11 @@ public class MessagesController extends BaseController implements NotificationCe
@@ -2207,6 +2272,15 @@ index 7a0b35b..f4ac48f 100644
          if (task.replyId != 0 && task.monoForumPeerId == 0) {
              TLRPC.TL_messages_readDiscussion req = new TLRPC.TL_messages_readDiscussion();
              req.msg_id = (int) task.replyId;
+@@ -21087,7 +21112,7 @@ public class MessagesController extends BaseController implements NotificationCe
+                     getNotificationCenter().postNotificationName(NotificationCenter.messagesReadContent, key, value);
+                 }
+             }
+-            if (deletedMessagesFinal != null) {
++            if (deletedMessagesFinal != null && !ForkPrivacy.keepDeleted()) {
+                 for (int a = 0, size = deletedMessagesFinal.size(); a < size; a++) {
+                     long dialogId = deletedMessagesFinal.keyAt(a);
+                     ArrayList<Integer> arrayList = deletedMessagesFinal.valueAt(a);
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java b/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
 index d6901d2..41376b7 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
@@ -2242,6 +2316,208 @@ index 39f493f..33534fb 100644
      }
  
      public static boolean isAutoplayGifs() {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+index 609d516..f738613 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+@@ -104,6 +104,7 @@ import org.telegram.messenger.AccountInstance;
+ import org.telegram.messenger.AndroidUtilities;
+ import org.telegram.messenger.AppGlobalConfig;
+ import org.telegram.messenger.ApplicationLoader;
++import org.telegram.messenger.ForkPrivacy;
+ import org.telegram.messenger.BotForumHelper;
+ import org.telegram.messenger.BotInlineKeyboard;
+ import org.telegram.messenger.ChatMessageSharedResources;
+@@ -1719,6 +1720,16 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+     private final StaticLayout[] forwardedNameLayout = new StaticLayout[2];
+     private int forwardedNameWidth;
+     private boolean drawForwardedName;
++
++    /**
++     * Единственная точка чтения признака шапки пересылки. AyuGram умеет
++     * прятать источник, и поле меняется одиннадцатью присваиваниями по
++     * коду — править каждое место чтения значило бы забыть одно. Здесь
++     * проверка одна, а все чтения идут через неё.
++     */
++    private boolean forwardVisible() {
++        return drawForwardedName && !ForkPrivacy.hideForwardOrigin();
++    }
+     private float forwardNameX;
+     private int forwardNameY;
+     private int forwardHeight;
+@@ -5152,7 +5163,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                         }
+                         result = true;
+                         invalidate();
+-                    } else if (drawForwardedName && forwardedNameLayout[0] != null && x >= forwardNameX && x <= forwardNameX + forwardedNameWidth && y >= forwardNameY && y <= forwardNameY + forwardHeight) {
++                    } else if (forwardVisible() && forwardedNameLayout[0] != null && x >= forwardNameX && x <= forwardNameX + forwardedNameWidth && y >= forwardNameY && y <= forwardNameY + forwardHeight) {
+                         if (viaWidth != 0 && x >= forwardNameX + viaNameWidth + dp(4)) {
+                             forwardBotPressed = true;
+                         } else {
+@@ -5297,7 +5308,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                     } else if (event.getAction() == MotionEvent.ACTION_CANCEL) {
+                         forwardBotPressed = false;
+                     } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
+-                        if (drawForwardedName && forwardedNameLayout[0] != null) {
++                        if (forwardVisible() && forwardedNameLayout[0] != null) {
+                             if (!(x >= forwardNameX && x <= forwardNameX + forwardedNameWidth && y >= forwardNameY && y <= forwardNameY + forwardHeight)) {
+                                 forwardBotPressed = false;
+                             }
+@@ -6287,7 +6298,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             return true;
+         }
+ 
+-        if (drawForwardedName && currentMessageObject.needDrawForwarded()) {
++        if (forwardVisible() && currentMessageObject.needDrawForwarded()) {
+             newNameString = currentMessageObject.getForwardedName();
+             return currentForwardNameString == null && newNameString != null || currentForwardNameString != null && newNameString == null || currentForwardNameString != null && !currentForwardNameString.equals(newNameString);
+         }
+@@ -9031,7 +9042,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+ 
+                 setMessageObjectInternal(messageObject);
+ 
+-                if (drawForwardedName && messageObject.needDrawForwarded() && (currentPosition == null || currentPosition.minY == 0)) {
++                if (forwardVisible() && messageObject.needDrawForwarded() && (currentPosition == null || currentPosition.minY == 0)) {
+                     namesOffset += dp(5);
+                 } else if (drawNameLayout && messageObject.getReplyMsgId() == 0) {
+                     namesOffset += dp(7);
+@@ -10484,7 +10495,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                 }
+                 setMessageObjectInternal(messageObject);
+ 
+-                if (drawForwardedName && messageObject.needDrawForwarded() && (currentPosition == null || currentPosition.minY == 0)) {
++                if (forwardVisible() && messageObject.needDrawForwarded() && (currentPosition == null || currentPosition.minY == 0)) {
+                     if (messageObject.type != MessageObject.TYPE_ROUND_VIDEO) {
+                         namesOffset += dp(5);
+                     }
+@@ -15308,10 +15319,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             }
+             reactionsLayoutInBubble.y = getBackgroundDrawableBottom() - dp(10) - reactionsLayoutInBubble.height;
+             reactionsLayoutInBubble.y -= (drawCommentButton ? dp(currentMessageObject.type == MessageObject.TYPE_PAID_MEDIA && hasCaptionLayout() ? 28 : 43) : 0);
+-            if (hasNewLineForTime && !(drawForwardedName && hasLinkPreview && documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO)) {
++            if (hasNewLineForTime && !(forwardVisible() && hasLinkPreview && documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO)) {
+                 reactionsLayoutInBubble.y -= dp(16);
+             }
+-            if (currentMessageObject.type != MessageObject.TYPE_FILE && (captionLayout != null && ((currentMessageObject.type != MessageObject.TYPE_VOICE && currentMessageObject.type != MessageObject.TYPE_POLL && !(currentMessageObject.isOut() && drawForwardedName && !drawPhotoImage)) || (currentPosition != null && currentMessagesGroup != null) || currentMessageObject.type == MessageObject.TYPE_PAID_MEDIA))) {
++            if (currentMessageObject.type != MessageObject.TYPE_FILE && (captionLayout != null && ((currentMessageObject.type != MessageObject.TYPE_VOICE && currentMessageObject.type != MessageObject.TYPE_POLL && !(currentMessageObject.isOut() && forwardVisible() && !drawPhotoImage)) || (currentPosition != null && currentMessagesGroup != null) || currentMessageObject.type == MessageObject.TYPE_PAID_MEDIA))) {
+                 reactionsLayoutInBubble.y -= dp(14);
+             }
+             reactionsLayoutInBubble.y += reactionsLayoutInBubble.positionOffsetY;
+@@ -19076,7 +19087,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                 currentForwardUser = MessagesController.getInstance(currentAccount).getUser(messageObject.messageOwner.fwd_from.from_id.user_id);
+             }
+         }
+-        if (messageObject.type == MessageObject.TYPE_STORY || (drawForwardedName && messageObject.needDrawForwarded() && (currentPosition == null || currentPosition.minY == 0))) {
++        if (messageObject.type == MessageObject.TYPE_STORY || (forwardVisible() && messageObject.needDrawForwarded() && (currentPosition == null || currentPosition.minY == 0))) {
+             if (messageObject.type != MessageObject.TYPE_STORY && messageObject.messageOwner.fwd_from.from_name != null) {
+                 currentForwardName = messageObject.messageOwner.fwd_from.from_name;
+             }
+@@ -19190,13 +19201,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             if (currentPosition == null || currentPosition.minY == 0) {
+                 if (isSideMenued && !drawBackground || !messageObject.isAnyKindOfSticker() && messageObject.type != MessageObject.TYPE_ROUND_VIDEO || messageObject.type == MessageObject.TYPE_EMOJIS) {
+                     namesOffset += dp(20) + (Theme.chat_replyTextPaint.getTextSize() + Theme.chat_replyNamePaint.getTextSize());
+-                    if (messageObject.type == MessageObject.TYPE_EMOJIS && !drawForwardedName) {
++                    if (messageObject.type == MessageObject.TYPE_EMOJIS && !forwardVisible()) {
+                         namesOffset += dp(12);
+                     } else if (messageObject.type != MessageObject.TYPE_TEXT) {
+                         namesOffset += dp(5);
+                     }
+                 }
+-                if (drawForwardedName && forwardedNameLayout[0] != null) {
++                if (forwardVisible() && forwardedNameLayout[0] != null) {
+                     namesOffset += dp(2);
+                 }
+ 
+@@ -19368,7 +19379,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                     } else if (messageObject.replyMessageObject == null && messageObject.messageOwner.reply_to != null && messageObject.messageOwner.reply_to.reply_from != null) {
+                         name = messageObject.getReplyQuoteNameWithIcon();
+                     } else if (messageObject.replyMessageObject != null) {
+-                        if (drawForwardedName) {
++                        if (forwardVisible()) {
+                             name = AndroidUtilities.removeDiacritics(messageObject.replyMessageObject.getForwardedName());
+                         }
+ 
+@@ -20258,7 +20269,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                 } else {
+                     replyStartX = backgroundDrawableLeft + backgroundDrawableRight + dp(17);
+                 }
+-                if (drawForwardedName) {
++                if (forwardVisible()) {
+                     forwardHeight = dp(4) + (int) Theme.chat_forwardNamePaint.getTextSize() * 2;
+                     replyStartY = forwardNameY + forwardHeight + dp(6);
+                 } else {
+@@ -20281,7 +20292,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                     replyStartX -= dp(7);
+                 }
+                 forwardHeight = dp(4) + (int) Theme.chat_forwardNamePaint.getTextSize() * 2;
+-                replyStartY = dp(12) + (int) (drawNameLayout && nameLayout != null ? getNameHeightAnimated() + dp(1) : 0) + (drawForwardedName && forwardedNameLayout[0] != null ? dp(4) + forwardHeight : 0);
++                replyStartY = dp(12) + (int) (drawNameLayout && nameLayout != null ? getNameHeightAnimated() + dp(1) : 0) + (forwardVisible() && forwardedNameLayout[0] != null ? dp(4) + forwardHeight : 0);
+             }
+             replyStartY += dp(.66f);
+             if (ephemeralLayout != null) {
+@@ -20298,7 +20309,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                     summaryStartX = backgroundDrawableLeft + dp(drawPinnedBottom ? 12 : 18) + getExtraTextX();
+                 }
+             }
+-            summaryStartY = dp(12) + (int) (drawNameLayout && nameLayout != null ? getNameHeightAnimated() + dp(1) : 0) + (drawForwardedName && forwardedNameLayout[0] != null ? dp(4) + forwardHeight : 0) + (int) (replyNameLayout != null ? replyHeight + dp(12) : 0);
++            summaryStartY = dp(12) + (int) (drawNameLayout && nameLayout != null ? getNameHeightAnimated() + dp(1) : 0) + (forwardVisible() && forwardedNameLayout[0] != null ? dp(4) + forwardHeight : 0) + (int) (replyNameLayout != null ? replyHeight + dp(12) : 0);
+         }
+         if (currentPosition == null && !transitionParams.animateBackgroundBoundsInner && !(enterTransitionInProgress && !currentMessageObject.isVoice())) {
+             drawNamesLayout(canvas, 1f);
+@@ -21966,7 +21977,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+     public boolean hasNameLayout() {
+         return (
+             drawNameLayout && nameLayout != null ||
+-            drawForwardedName && forwardedNameLayout[0] != null && forwardedNameLayout[1] != null && (currentPosition == null || currentPosition.minY == 0 && currentPosition.minX == 0) ||
++            forwardVisible() && forwardedNameLayout[0] != null && forwardedNameLayout[1] != null && (currentPosition == null || currentPosition.minY == 0 && currentPosition.minX == 0) ||
+             drawSummaryReply || transitionParams.animateSummaryReply ||
+             replyNameLayout != null
+         );
+@@ -22380,7 +22391,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             canvas.restore();
+         }
+ 
+-        boolean drawForwardedNameLocal = drawForwardedName || currentMessageObject.type == MessageObject.TYPE_STORY;
++        boolean drawForwardedNameLocal = forwardVisible() || currentMessageObject.type == MessageObject.TYPE_STORY;
+         boolean hasReply = replyNameLayout != null;
+         StaticLayout[] forwardedNameLayoutLocal = forwardedNameLayout;
+         float animatingAlpha = 1f;
+@@ -22747,7 +22758,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                         replySelectorRect.right = Math.max(replySelectorRect.right, forwardNameRight);
+                     }
+                 } else {
+-                    if (drawTopic || drawNameLayout || (drawForwardedName && forwardedNameLayout[0] != null)) {
++                    if (drawTopic || drawNameLayout || (forwardVisible() && forwardedNameLayout[0] != null)) {
+                         rightRad = bottomRad;
+                     } else if (!currentMessageObject.isOutOwner() || !drawPinnedTop) {
+                         rightRad = SharedConfig.bubbleRadius * .6f;
+@@ -22784,7 +22795,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                     right -= dp(10 + (currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) + getExtraTextX();
+                     replySelectorRect.set(
+                         (backgroundDrawableLeft + transitionParams.deltaLeft + dp(10 + (!currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) + getExtraTextX()),
+-                        (replyStartY - dp((!mediaBackground && drawPinnedTop && !drawNameLayout ? 2 : 0)) - (drawForwardedName && forwardedNameLayout[0] != null && !drawNameLayout ? 2 : 0)),
++                        (replyStartY - dp((!mediaBackground && drawPinnedTop && !drawNameLayout ? 2 : 0)) - (forwardVisible() && forwardedNameLayout[0] != null && !drawNameLayout ? 2 : 0)),
+                         right,
+                         (replyStartY + replyHeight + dp(4))
+                     );
+@@ -22992,7 +23003,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                 right -= dp(10 + (currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) + getExtraTextX();
+                 summarySelectorRect.set(
+                     (backgroundDrawableLeft + transitionParams.deltaLeft + dp(10 + (!currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) + getExtraTextX()),
+-                    (summaryStartY - dp((!mediaBackground && drawPinnedTop && !drawNameLayout ? 2 : 0)) - (drawForwardedName && forwardedNameLayout[0] != null && !drawNameLayout ? 2 : 0)),
++                    (summaryStartY - dp((!mediaBackground && drawPinnedTop && !drawNameLayout ? 2 : 0)) - (forwardVisible() && forwardedNameLayout[0] != null && !drawNameLayout ? 2 : 0)),
+                     right,
+                     (summaryStartY + height)
+                 );
+@@ -27100,7 +27111,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+                         }
+                         sb.append('\n');
+                     }
+-                    if (drawForwardedName) {
++                    if (forwardVisible()) {
+                         for (int a = 0; a < 2; a++) {
+                             if (forwardedNameLayout[a] != null && forwardedNameLayout[a].getText() != null) {
+                                 sb.append(forwardedNameLayout[a].getText());
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
 index ee6b470..1c9911c 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
@@ -2469,10 +2745,10 @@ index 0000000..7bd0152
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
 new file mode 100644
-index 0000000..c5dd966
+index 0000000..00c1f64
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,258 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -2488,6 +2764,7 @@ index 0000000..c5dd966
 +
 +import org.telegram.messenger.AndroidUtilities;
 +import org.telegram.messenger.ForkGhost;
++import org.telegram.messenger.ForkPrivacy;
 +import org.telegram.messenger.LocaleController;
 +import org.telegram.messenger.R;
 +import org.telegram.ui.ActionBar.ActionBar;
@@ -2514,7 +2791,9 @@ index 0000000..c5dd966
 +    private static final int ROW_AUTO_OFFLINE = 5;
 +    private static final int ROW_ALWAYS_ONLINE = 6;
 +    private static final int ROW_KEEP_ONLINE = 7;
-+    private static final int ROW_COUNT = 8;
++    private static final int ROW_KEEP_DELETED = 8;
++    private static final int ROW_HIDE_FORWARD = 9;
++    private static final int ROW_COUNT = 10;
 +
 +    private RecyclerListView listView;
 +    private ListAdapter adapter;
@@ -2597,6 +2876,14 @@ index 0000000..c5dd966
 +                ForkGhost.setKeepOnline(value);
 +                break;
 +            }
++            case ROW_KEEP_DELETED: {
++                ForkPrivacy.setKeepDeleted(value);
++                break;
++            }
++            case ROW_HIDE_FORWARD: {
++                ForkPrivacy.setHideForwardOrigin(value);
++                break;
++            }
 +        }
 +        refresh();
 +    }
@@ -2611,6 +2898,8 @@ index 0000000..c5dd966
 +            case ROW_AUTO_OFFLINE: return LocaleController.getString(R.string.ForkGhostAutoOffline);
 +            case ROW_ALWAYS_ONLINE: return LocaleController.getString(R.string.ForkGhostAlwaysOnline);
 +            case ROW_KEEP_ONLINE: return LocaleController.getString(R.string.ForkGhostKeepOnline);
++            case ROW_KEEP_DELETED: return LocaleController.getString(R.string.ForkKeepDeleted);
++            case ROW_HIDE_FORWARD: return LocaleController.getString(R.string.ForkHideForward);
 +        }
 +        return "";
 +    }
@@ -2625,6 +2914,8 @@ index 0000000..c5dd966
 +            case ROW_AUTO_OFFLINE: return ForkGhost.isAutoOffline();
 +            case ROW_ALWAYS_ONLINE: return ForkGhost.alwaysOnline();
 +            case ROW_KEEP_ONLINE: return ForkGhost.keepOnline();
++            case ROW_KEEP_DELETED: return ForkPrivacy.keepDeleted();
++            case ROW_HIDE_FORWARD: return ForkPrivacy.hideForwardOrigin();
 +        }
 +        return false;
 +    }
@@ -2698,8 +2989,11 @@ index 0000000..c5dd966
 +            // «щёлкнет» переключателем при прокрутке.
 +            switchHolder.toggle.setOnCheckedChangeListener(null);
 +            switchHolder.toggle.setChecked(checked(position));
-+            switchHolder.toggle.setEnabled(enabled || position == ROW_ENABLED);
-+            switchHolder.toggle.setAlpha(enabled || position == ROW_ENABLED ? 1f : 0.5f);
++            // Призрак выключен — его пункты гаснут, но анти-удаление и
++            // скрытие пересылки от призрака не зависят.
++            boolean needsGhost = position <= ROW_KEEP_ONLINE;
++            switchHolder.toggle.setEnabled(!needsGhost || enabled || position == ROW_ENABLED);
++            switchHolder.toggle.setAlpha(!needsGhost || enabled || position == ROW_ENABLED ? 1f : 0.5f);
 +            switchHolder.toggle.setOnCheckedChangeListener((button, isChecked) -> {
 +                if (isChecked != checked(position)) {
 +                    toggle(position, isChecked);
@@ -4246,7 +4540,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..711adac 100644
+index 1013bb6..f4767e4 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -4266,7 +4560,7 @@ index 1013bb6..711adac 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,56 @@
+@@ -11235,4 +11236,58 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -4298,6 +4592,8 @@ index 1013bb6..711adac 100644
 +    <string name="ForkGhostTyping">Don\'t send typing</string>
 +    <string name="ForkGhostAutoOffline">Automatic offline</string>
 +    <string name="ForkGhostAlwaysOnline">Always online</string>
++    <string name="ForkKeepDeleted">Keep deleted messages</string>
++    <string name="ForkHideForward">Hide forwarded from</string>
 +    <string name="ForkPresenceTitle">Always online is on</string>
 +    <string name="ForkPresenceText">This notification keeps the app alive so your status stays online. Turn the setting off to hide it.</string>
 +    <string name="ForkGhostKeepOnline">Stay online after closing</string>
