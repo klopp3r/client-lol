@@ -25,10 +25,10 @@ index 85a9f84..c16b7c0 100644
  
      externalNativeBuild {
 diff --git a/TMessagesProj/proguard-rules.pro b/TMessagesProj/proguard-rules.pro
-index 6801688..8bb3cdf 100644
+index 6801688..b455ba9 100644
 --- a/TMessagesProj/proguard-rules.pro
 +++ b/TMessagesProj/proguard-rules.pro
-@@ -53,4 +53,34 @@
+@@ -53,4 +53,35 @@
  
  # Use -keep to explicitly keep any other classes shrinking would remove
  #-dontoptimize
@@ -54,6 +54,7 @@ index 6801688..8bb3cdf 100644
 +
 +# Классы форка: имена нужны ClassShutter (песочница) и обработчику падений.
 +-keep class org.telegram.messenger.ForkPlugin { *; }
++-keep class org.telegram.messenger.ForkHooks { *; }
 +-keep class org.telegram.messenger.ForkPluginApi { *; }
 +-keep class org.telegram.messenger.ForkPluginManager { *; }
 +-keep class org.telegram.messenger.ForkDiagnostics { *; }
@@ -117,6 +118,171 @@ index 6f6d377..cdc3d53 100644
          <meta-data android:name="com.google.android.gms.vision.DEPENDENCIES" android:value="face,barcode" />
  
          <meta-data android:name="android.max_aspect" android:value="2.5" />
+diff --git a/TMessagesProj/src/main/assets/fork-plugins/peek_online.plugin b/TMessagesProj/src/main/assets/fork-plugins/peek_online.plugin
+new file mode 100644
+index 0000000..82e3c4f
+--- /dev/null
++++ b/TMessagesProj/src/main/assets/fork-plugins/peek_online.plugin
+@@ -0,0 +1,34 @@
++/*
++ * Пик онлайна
++ * Меняет текст статуса у собеседников: вместо «онлайн» показывает свой текст.
++ * Работает через крюк статуса, поэтому меняются все экраны сразу.
++ */
++@fork-plugin
++{"id":"peek_online","name":"Пик онлайна","description":"Показывает свой текст вместо «онлайн»","author":"Huntergram","version":"1.0"}
++
++(function () {
++    var REPLACEMENT = 'последний раз в сети';
++
++    // «онлайн» в любом регистре и с заглавной буквы
++    var ONLINE = /^(онлайн|online)$/i;
++
++    function isOnlineText(text) {
++        if (!text) {
++            return false;
++        }
++        return ONLINE.test(String(text).replace(/^\s+|\s+$/g, ''));
++    }
++
++    fork.onStatusText(function (userId, text) {
++        if (!isOnlineText(text)) {
++            return text;
++        }
++        return fork.getText('replacement', REPLACEMENT);
++    });
++
++    fork.addSection('Пик онлайна');
++    fork.addText('replacement', 'Что показывать вместо «онлайн»', REPLACEMENT,
++        'Плагин не знает время последнего захода, поэтому не придумывает его. Если напишете «был(а) 5 минут назад», это будет правда только для вас.');
++    fork.addInfo('Подменяется только текст «онлайн». Цвет и зелёная точка остаются как в Telegram.');
++    fork.addInfo('Проверка срабатываний: ' + fork.calls('statusText'));
++})();
+diff --git a/TMessagesProj/src/main/assets/fork-plugins/streams.plugin b/TMessagesProj/src/main/assets/fork-plugins/streams.plugin
+new file mode 100644
+index 0000000..4156798
+--- /dev/null
++++ b/TMessagesProj/src/main/assets/fork-plugins/streams.plugin
+@@ -0,0 +1,54 @@
++/*
++ * Режим потоков
++ * Убирает из списка диалогов то, что сейчас не нужно: прочитанное, группы,
++ * каналы — на выбор. Внутренние подсчёты Telegram не затрагиваются, прячется
++ * только отображение.
++ */
++@fork-plugin
++{"id":"streams","name":"Режим потоков","description":"Прячет прочитанные диалоги, группы и каналы","author":"Huntergram","version":"1.0"}
++
++(function () {
++    var USER = 1;
++    var GROUP = 2;
++    var CHANNEL = 3;
++
++    function kind(peerType) {
++        if (peerType === GROUP || peerType === CHANNEL) {
++            return 'collective';
++        }
++        if (peerType === USER) {
++            return 'user';
++        }
++        return 'other';
++    }
++
++    fork.shouldShowDialog(function (chatId, peerId, peerType, unreadCount, read) {
++        if (!fork.getFlag('enabled', true)) {
++            return true;
++        }
++        if (fork.getFlag('onlyUnread', false)) {
++            return !read || (unreadCount || 0) > 0;
++        }
++        if (fork.getFlag('hideRead', false) && read && (unreadCount || 0) === 0) {
++            return false;
++        }
++        if (fork.getFlag('hideCollective', false) && kind(peerType) === 'collective') {
++            return false;
++        }
++        if (fork.getFlag('hideUsers', false) && kind(peerType) === 'user') {
++            return false;
++        }
++        return true;
++    });
++
++    fork.addSection('Режим потоков');
++    fork.addSwitch('enabled', 'Включить', true);
++    fork.addSwitch('onlyUnread', 'Только непрочитанные', false,
++        'Оставляет диалоги, где есть непрочитанные сообщения. Всё остальное скрывает.');
++    fork.addSwitch('hideRead', 'Прятать прочитанные', false);
++    fork.addSwitch('hideCollective', 'Прятать группы и каналы', false);
++    fork.addSwitch('hideUsers', 'Прятать личные чаты', false);
++    fork.addInfo('Прячется только список. Непрочитанные счётчики и push Telegram считает как обычно.');
++    fork.addInfo('Режим «только непрочитанные» может скрыть весь список — это ожидаемо.');
++    fork.addInfo('Проверено диалогов: ' + fork.calls('dialog'));
++})();
+diff --git a/TMessagesProj/src/main/assets/fork-plugins/word_filters.plugin b/TMessagesProj/src/main/assets/fork-plugins/word_filters.plugin
+new file mode 100644
+index 0000000..79b2cb7
+--- /dev/null
++++ b/TMessagesProj/src/main/assets/fork-plugins/word_filters.plugin
+@@ -0,0 +1,59 @@
++/*
++ * Фильтры по словам
++ * Если в тексте входящего сообщения есть запрещённое слово, уведомление
++ * молчит. Само сообщение в чат приходит как обычно — это не удаление и не
++ * скрытие диалога.
++ */
++@fork-plugin
++{"id":"word_filters","name":"Фильтры по словам","description":"Заглушает уведомления по запрещённым словам","author":"Huntergram","version":"1.0"}
++
++(function () {
++    // Сообщение считается личным чатом, если собеседник совпадает с чатом
++    function isPrivate(chatId, fromId) {
++        return !!chatId && !!fromId && String(chatId) === String(fromId);
++    }
++
++    function wordList() {
++        var raw = fork.getText('words', '');
++        if (!raw) {
++            return [];
++        }
++        var out = [];
++        var parts = String(raw).split(/[,;\n]+/);
++        for (var i = 0; i < parts.length; i++) {
++            var w = parts[i].replace(/^\s+|\s+$/g, '').toLowerCase();
++            if (w.length > 1) {
++                out.push(w);
++            }
++        }
++        return out;
++    }
++
++    function contains(text, word) {
++        return String(text).toLowerCase().indexOf(word) >= 0;
++    }
++
++    fork.shouldNotify(function (chatId, fromId, messageText) {
++        if (!fork.getFlag('enabled', true)) {
++            return true;
++        }
++        if (!isPrivate(chatId, fromId) || !messageText) {
++            return true;
++        }
++        var words = wordList();
++        for (var i = 0; i < words.length; i++) {
++            if (contains(messageText, words[i])) {
++                return false;
++            }
++        }
++        return true;
++    });
++
++    fork.addSection('Фильтры по словам');
++    fork.addSwitch('enabled', 'Включить', true, 'Пока выключено, уведомления приходят как обычно.');
++    fork.addText('words', 'Запрещённые слова', '',
++        'Через запятую. Регистр не важен. Учитываются слова от 2 символов.');
++    fork.addInfo('Глушится только уведомление. Сообщение всё равно появится в чате.');
++    fork.addInfo('Работает только в личных чатах, в группах и каналах — нет.');
++    fork.addInfo('Проверено уведомлений: ' + fork.calls('notify'));
++})();
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java b/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
 index 083d15e..f90427d 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
@@ -138,7 +304,7 @@ index 083d15e..f90427d 100644
              if (view == null || view.getContext() == null) return;
              if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
-index 5405be7..2a9222a 100644
+index 5405be7..83dfb61 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
 @@ -282,6 +282,10 @@ public class ApplicationLoader extends Application {
@@ -152,6 +318,21 @@ index 5405be7..2a9222a 100644
          try {
              applicationContext = getApplicationContext();
          } catch (Throwable ignore) {
+@@ -290,6 +294,14 @@ public class ApplicationLoader extends Application {
+ 
+         super.onCreate();
+ 
++        // Встроенные плагины: уведомления приходят в фоне, до того как
++        // пользователь откроет экран плагинов. Строго после присваивания
++        // applicationContext — плагины ходят в настройки и файлы.
++        try {
++            ForkPluginManager.getInstance().loadAndRun();
++        } catch (Throwable ignore) {
++        }
++
+         // AndroidUtilities must be initialized before FileLog
+         final String helloWorld = AndroidUtilities.getHelloWorld();
+ 
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 index 4ed7e64..6e4881f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
@@ -470,6 +651,306 @@ index 0000000..9c268d6
 +        });
 +    }
 +}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkHooks.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkHooks.java
+new file mode 100644
+index 0000000..f756013
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkHooks.java
+@@ -0,0 +1,294 @@
++package org.telegram.messenger;
++
++import org.mozilla.javascript.Function;
++import org.mozilla.javascript.Scriptable;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * Мост между форком и плагинами.
++ *
++ * Правила, которые класс обязан соблюдать всегда:
++ *  - если плагин ничего не зарегистрировал, вызов ничего не стоит;
++ *  - любая ошибка плагина (в том числе Rhino) перехватывается и гасится:
++ *    плагин не имеет права ронять приложение;
++ *  - глобальный выключатель системы плагинов уважается: при выключенной
++ *    системе все крюки молчат;
++ *  - каждый крюк считает срабатывания, чтобы плагин мог проверить себя
++ *    в своих настройках и увидеть, что данные реально приходят.
++ */
++public final class ForkHooks {
++    private ForkHooks() {
++    }
++
++    /** Зарегистрированный обработчик одного крюка. */
++    private static final class Hook {
++        final ForkPlugin plugin;
++        final Function function;
++
++        Hook(ForkPlugin plugin, Function function) {
++            this.plugin = plugin;
++            this.function = function;
++        }
++    }
++
++    private static final Map<String, Hook> ON_MESSAGE = new LinkedHashMap<>();
++    private static final Map<String, Hook> ON_DELETED = new LinkedHashMap<>();
++    private static final Map<String, Hook> ON_STATUS_TEXT = new LinkedHashMap<>();
++    private static final Map<String, Hook> SHOULD_SHOW_DIALOG = new LinkedHashMap<>();
++    private static final Map<String, Hook> SHOULD_NOTIFY = new LinkedHashMap<>();
++
++    /** Счётчики срабатываний: pluginId -> [onMessage, shouldNotify, ...]. */
++    private static final Map<String, int[]> COUNTERS = new LinkedHashMap<>();
++    private static final Object LOCK = new Object();
++
++    public static final int COUNT_ON_MESSAGE = 0;
++    public static final int COUNT_ON_DELETED = 1;
++    public static final int COUNT_STATUS_TEXT = 2;
++    public static final int COUNT_DIALOG = 3;
++    public static final int COUNT_NOTIFY = 4;
++    private static final int COUNTERS_TOTAL = 5;
++
++    // ---------------------------------------------------------------- регистрация
++
++    private static void register(Map<String, Hook> target, ForkPlugin plugin, Object fn) {
++        if (!(fn instanceof Function) || plugin == null) {
++            return;
++        }
++        synchronized (LOCK) {
++            target.put(plugin.id, new Hook(plugin, (Function) fn));
++            count(plugin.id);
++        }
++    }
++
++    public static void onMessage(ForkPlugin plugin, Object fn) {
++        register(ON_MESSAGE, plugin, fn);
++    }
++
++    public static void onDeleted(ForkPlugin plugin, Object fn) {
++        register(ON_DELETED, plugin, fn);
++    }
++
++    public static void onStatusText(ForkPlugin plugin, Object fn) {
++        register(ON_STATUS_TEXT, plugin, fn);
++    }
++
++    public static void shouldShowDialog(ForkPlugin plugin, Object fn) {
++        register(SHOULD_SHOW_DIALOG, plugin, fn);
++    }
++
++    public static void shouldNotify(ForkPlugin plugin, Object fn) {
++        register(SHOULD_NOTIFY, plugin, fn);
++    }
++
++    private static void count(String pluginId) {
++        int[] c = COUNTERS.get(pluginId);
++        if (c == null) {
++            c = new int[COUNTERS_TOTAL];
++            COUNTERS.put(pluginId, c);
++        }
++    }
++
++    private static void bump(String pluginId, int slot) {
++        try {
++            count(pluginId);
++            COUNTERS.get(pluginId)[slot]++;
++        } catch (Throwable ignore) {
++        }
++    }
++
++    public static int counter(ForkPlugin plugin, int slot) {
++        try {
++            int[] c = COUNTERS.get(plugin.id);
++            return c == null ? 0 : c[slot];
++        } catch (Throwable ignore) {
++            return 0;
++        }
++    }
++
++    /** Снимает все обработчики плагина — при выгрузке и перезагрузке. */
++    public static void unregister(String pluginId) {
++        if (pluginId == null) {
++            return;
++        }
++        synchronized (LOCK) {
++            ON_MESSAGE.remove(pluginId);
++            ON_DELETED.remove(pluginId);
++            ON_STATUS_TEXT.remove(pluginId);
++            SHOULD_SHOW_DIALOG.remove(pluginId);
++            SHOULD_NOTIFY.remove(pluginId);
++        }
++    }
++
++    // ---------------------------------------------------------------- вызов
++
++    /** Включена ли система плагинов. Ничего не значит сама по себе. */
++    private static boolean systemOn() {
++        try {
++            return ForkPluginManager.getInstance().isSystemEnabled();
++        } catch (Throwable ignore) {
++            return false;
++        }
++    }
++
++    /** Есть ли вообще хоть один зарегистрированный обработчик. */
++    private static boolean anyHooks() {
++        return !ON_MESSAGE.isEmpty() || !ON_DELETED.isEmpty() || !ON_STATUS_TEXT.isEmpty()
++                || !SHOULD_SHOW_DIALOG.isEmpty() || !SHOULD_NOTIFY.isEmpty();
++    }
++
++    private static List<Hook> snapshot(Map<String, Hook> map) {
++        try {
++            return map.isEmpty() ? Collections.<Hook>emptyList() : new ArrayList<>(map.values());
++        } catch (Throwable ignore) {
++            return Collections.emptyList();
++        }
++    }
++
++    private static Object call(Hook hook, Object... args) {
++        try {
++            return ForkPluginManager.getInstance().callHook(hook.plugin, hook.function, args);
++        } catch (Throwable ignore) {
++            return null;
++        }
++    }
++
++    /** Новое сообщение. Возвращает false, если плагин запретил уведомление. */
++    public static boolean newMessage(long chatId, long fromId, long messageId, int date, String text) {
++        if (!systemOn() || (ON_MESSAGE.isEmpty() && SHOULD_NOTIFY.isEmpty())) {
++            return true;
++        }
++        boolean allow = true;
++        List<Hook> hooks = snapshot(ON_MESSAGE);
++        for (int i = 0; i < hooks.size(); i++) {
++            Hook h = hooks.get(i);
++            bump(h.plugin.id, COUNT_ON_MESSAGE);
++            call(h, chatId, fromId, messageId, date, text);
++        }
++        List<Hook> notifiers = snapshot(SHOULD_NOTIFY);
++        for (int i = 0; i < notifiers.size(); i++) {
++            Hook h = notifiers.get(i);
++            Object r = call(h, chatId, fromId, text);
++            if (r instanceof Boolean && !((Boolean) r)) {
++                allow = false;
++            }
++        }
++        if (!notifiers.isEmpty() && !allow) {
++            List<Hook> hooks2 = snapshot(ON_MESSAGE);
++            for (int i = 0; i < hooks2.size(); i++) {
++                bump(hooks2.get(i).plugin.id, COUNT_NOTIFY);
++            }
++        }
++        return allow;
++    }
++
++    /** Удалённые сообщения: ids — массив long. */
++    public static void deletedMessages(long chatId, Object ids) {
++        if (!systemOn() || ON_DELETED.isEmpty()) {
++            return;
++        }
++        List<Hook> hooks = snapshot(ON_DELETED);
++        for (int i = 0; i < hooks.size(); i++) {
++            Hook h = hooks.get(i);
++            bump(h.plugin.id, COUNT_ON_DELETED);
++            call(h, chatId, ids);
++        }
++    }
++
++    /** Замена текста статуса. null — оставить как есть. */
++    public static String statusText(long userId, String text) {
++        if (!systemOn() || ON_STATUS_TEXT.isEmpty()) {
++            return text;
++        }
++        String result = text;
++        List<Hook> hooks = snapshot(ON_STATUS_TEXT);
++        for (int i = 0; i < hooks.size(); i++) {
++            Hook h = hooks.get(i);
++            bump(h.plugin.id, COUNT_STATUS_TEXT);
++            Object r = call(h, userId, result);
++            if (r instanceof String && !((String) r).isEmpty()) {
++                result = (String) r;
++            }
++        }
++        return result;
++    }
++
++    /**
++     * Фильтр списка диалогов для отображения. Возвращает исходный список,
++     * если фильтровать нечего, и копию — если что-то отфильтровано.
++     * Внутренние потребители (подсчёт непрочитанного) сюда не попадают.
++     */
++    public static java.util.List<TLRPC.Dialog> filterDialogs(java.util.List<TLRPC.Dialog> source) {
++        if (source == null || source.isEmpty() || !systemOn() || SHOULD_SHOW_DIALOG.isEmpty()) {
++            return source;
++        }
++        try {
++            java.util.List<TLRPC.Dialog> copy = new ArrayList<>(source.size());
++            for (int i = 0; i < source.size(); i++) {
++                TLRPC.Dialog d = source.get(i);
++                if (d == null) {
++                    continue;
++                }
++                long peerId = 0;
++                int peerType = 0;
++                if (d.peer != null) {
++                    if (d.peer.user_id != 0) { peerId = d.peer.user_id; peerType = 1; }
++                    else if (d.peer.chat_id != 0) { peerId = d.peer.chat_id; peerType = 2; }
++                    else if (d.peer.channel_id != 0) { peerId = d.peer.channel_id; peerType = 3; }
++                }
++                boolean read = d.top_message > 0 && d.top_message <= d.read_inbox_max_id;
++                if (showDialog(d.id, peerId, peerType, d.unread_count, read)) {
++                    copy.add(d);
++                }
++            }
++            return copy;
++        } catch (Throwable ignore) {
++            return source;
++        }
++    }
++
++    /**
++     * Пропустить ли сообщение в очередь уведомлений. Сообщение при этом
++     * никуда не девается: оно всё равно придёт в чат, молчит только пуш.
++     */
++    public static boolean shouldNotifyForMessage(long dialogId, long fromId, String text) {
++        if (!systemOn() || SHOULD_NOTIFY.isEmpty()) {
++            return true;
++        }
++        try {
++            List<Hook> hooks = snapshot(SHOULD_NOTIFY);
++            for (int i = 0; i < hooks.size(); i++) {
++                Hook h = hooks.get(i);
++                bump(h.plugin.id, COUNT_NOTIFY);
++                Object r = call(h, dialogId, fromId, text);
++                if (r instanceof Boolean && !((Boolean) r)) {
++                    return false;
++                }
++            }
++        } catch (Throwable ignore) {
++        }
++        return true;
++    }
++
++    /** Показывать ли диалог в списке. */
++    public static boolean showDialog(long chatId, long peerId, int peerType, int unreadCount, boolean read) {
++        if (!systemOn() || SHOULD_SHOW_DIALOG.isEmpty()) {
++            return true;
++        }
++        boolean show = true;
++        List<Hook> hooks = snapshot(SHOULD_SHOW_DIALOG);
++        for (int i = 0; i < hooks.size(); i++) {
++            Hook h = hooks.get(i);
++            bump(h.plugin.id, COUNT_DIALOG);
++            Object r = call(h, chatId, peerId, peerType, unreadCount, read);
++            if (r instanceof Boolean && !((Boolean) r)) {
++                show = false;
++            }
++        }
++        return show;
++    }
++}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPlugin.java
 new file mode 100644
 index 0000000..2a162c0
@@ -542,10 +1023,10 @@ index 0000000..2a162c0
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginApi.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginApi.java
 new file mode 100644
-index 0000000..6b72237
+index 0000000..a79d875
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginApi.java
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,185 @@
 +package org.telegram.messenger;
 +
 +import android.text.TextUtils;
@@ -624,6 +1105,101 @@ index 0000000..6b72237
 +        addAction(title, null, onClick);
 +    }
 +
++    // -------------------------------------------------------------- крюки
++
++    /** Новое сообщение: function(chatId, fromId, messageId, date, text). */
++    public void onMessage(org.mozilla.javascript.Function fn) {
++        ForkHooks.onMessage(plugin, fn);
++    }
++
++    /** Удалённые сообщения: function(chatId, ids). */
++    public void onDeleted(org.mozilla.javascript.Function fn) {
++        ForkHooks.onDeleted(plugin, fn);
++    }
++
++    /** Правка текста статуса: function(userId, text) -> строка. */
++    public void onStatusText(org.mozilla.javascript.Function fn) {
++        ForkHooks.onStatusText(plugin, fn);
++    }
++
++    /** Показывать ли диалог: function(chatId, peerId, title) -> true/false. */
++    public void shouldShowDialog(org.mozilla.javascript.Function fn) {
++        ForkHooks.shouldShowDialog(plugin, fn);
++    }
++
++    /** Разрешать ли уведомление: function(chatId, fromId, text) -> true/false. */
++    public void shouldNotify(org.mozilla.javascript.Function fn) {
++        ForkHooks.shouldNotify(plugin, fn);
++    }
++
++    // -------------------------------------------------------------- счётчики
++
++    /** Сколько раз приходил новый текст: fork.calls("onMessage"). */
++    public int calls(String what) {
++        int slot;
++        switch (what == null ? "" : what) {
++            case "onDeleted": slot = ForkHooks.COUNT_ON_DELETED; break;
++            case "statusText": slot = ForkHooks.COUNT_STATUS_TEXT; break;
++            case "dialog": slot = ForkHooks.COUNT_DIALOG; break;
++            case "notify": slot = ForkHooks.COUNT_NOTIFY; break;
++            default: slot = ForkHooks.COUNT_ON_MESSAGE; break;
++        }
++        return ForkHooks.counter(plugin, slot);
++    }
++
++    // -------------------------------------------------------------- хранилище
++
++    /** Ключ с именем плагина: два плагина не затирают настройки друг друга. */
++    private String key(String raw) {
++        return plugin.id + "." + raw;
++    }
++
++    private android.content.SharedPreferences store() {
++        try {
++            return ForkPluginManager.getInstance().pluginPrefs(plugin.id);
++        } catch (Throwable ignore) {
++            return null;
++        }
++    }
++
++    public void put(String key, String value) {
++        try {
++            android.content.SharedPreferences p = store();
++            if (p != null) {
++                p.edit().putString(key(key), value).apply();
++            }
++        } catch (Throwable ignore) {
++        }
++    }
++
++    public String get(String key, String def) {
++        try {
++            android.content.SharedPreferences p = store();
++            return p == null ? def : p.getString(key(key), def);
++        } catch (Throwable ignore) {
++            return def;
++        }
++    }
++
++    public void putInt(String key, int value) {
++        try {
++            android.content.SharedPreferences p = store();
++            if (p != null) {
++                p.edit().putInt(key(key), value).apply();
++            }
++        } catch (Throwable ignore) {
++        }
++    }
++
++    public int getInt(String key, int def) {
++        try {
++            android.content.SharedPreferences p = store();
++            return p == null ? def : p.getInt(key(key), def);
++        } catch (Throwable ignore) {
++            return def;
++        }
++    }
++
 +    public void toast(final String text) {
 +        if (TextUtils.isEmpty(text)) {
 +            return;
@@ -638,10 +1214,10 @@ index 0000000..6b72237
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
 new file mode 100644
-index 0000000..1274aa5
+index 0000000..09ae8e0
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
-@@ -0,0 +1,518 @@
+@@ -0,0 +1,610 @@
 +package org.telegram.messenger;
 +
 +import android.content.SharedPreferences;
@@ -820,6 +1396,7 @@ index 0000000..1274aa5
 +            return plugins;
 +        }
 +        loaded = true;
++        seedBundled();
 +        File[] files = dir().listFiles();
 +        if (files != null) {
 +            Arrays.sort(files, new Comparator<File>() {
@@ -835,6 +1412,60 @@ index 0000000..1274aa5
 +            }
 +        }
 +        return plugins;
++    }
++
++    /**
++     * Загрузить плагины и выполнить включённые. Без этого скрипты запускаются
++     * только при открытии их настроек, и крюки молчат: события приходят в
++     * фоне, а scope плагина ещё не создан.
++     */
++    public synchronized void loadAndRun() {
++        if (ApplicationLoader.applicationContext == null || !isSystemEnabled()) {
++            return;
++        }
++        ArrayList<ForkPlugin> list = loadPlugins();
++        for (int i = 0; i < list.size(); i++) {
++            ForkPlugin plugin = list.get(i);
++            if (plugin.enabled && plugin.scope == null) {
++                run(plugin);
++            }
++        }
++    }
++
++    /** Скопировать встроенные в APK плагины, если их ещё нет на устройстве. */
++    private void seedBundled() {
++        try {
++            String[] names = ApplicationLoader.applicationContext.getAssets().list("fork-plugins");
++            if (names == null) {
++                return;
++            }
++            for (int i = 0; i < names.length; i++) {
++                if (pluginExtension(names[i]) == null) {
++                    continue;
++                }
++                File target = new File(dir(), names[i]);
++                if (target.exists()) {
++                    continue;
++                }
++                InputStream in = ApplicationLoader.applicationContext.getAssets().open("fork-plugins/" + names[i]);
++                try {
++                    FileOutputStream out = new FileOutputStream(target);
++                    try {
++                        byte[] buffer = new byte[4096];
++                        int read;
++                        while ((read = in.read(buffer)) > 0) {
++                            out.write(buffer, 0, read);
++                        }
++                        out.flush();
++                    } finally {
++                        out.close();
++                    }
++                } finally {
++                    in.close();
++                }
++            }
++        } catch (Throwable ignore) {
++        }
 +    }
 +
 +    public synchronized ForkPlugin find(String id) {
@@ -1094,6 +1725,9 @@ index 0000000..1274aa5
 +    public void run(final ForkPlugin plugin) {
 +        plugin.rows.clear();
 +        plugin.error = null;
++        // Плагин мог быть запущен раньше: снимаем его прежние крюки, иначе
++        // обработчики накапливаются и событие уходит в скрипт дважды.
++        ForkHooks.unregister(plugin.id);
 +        if (!isSystemEnabled()) {
 +            plugin.error = "plugin system is turned off in settings";
 +            return;
@@ -1117,6 +1751,40 @@ index 0000000..1274aa5
 +            }
 +        } catch (Throwable t) {
 +            plugin.error = describe(t);
++        } finally {
++            Context.exit();
++        }
++    }
++
++    /**
++     * Хранилище плагина. Ключи разводит сам ForkPluginApi: префикс равен id.
++     */
++    public android.content.SharedPreferences pluginPrefs(String pluginId) {
++        return prefs();
++    }
++
++    /**
++     * Вызов обработчика крюка с возвратом значения. В отличие от callAction
++     * возвращает то, что вернул скрипт, и никогда не бросает наружу.
++     */
++    public Object callHook(ForkPlugin plugin, Function function, Object... args) {
++        if (function == null || plugin == null || plugin.scope == null) {
++            return null;
++        }
++        if (!isSystemEnabled() || !plugin.enabled) {
++            return null;
++        }
++        Context cx = factory().enterContext();
++        try {
++            prepare(cx);
++            Scriptable scope = plugin.scope;
++            putApi(cx, scope, plugin);
++            synchronized (plugin) {
++                return function.call(cx, scope, scope, args == null ? new Object[0] : args);
++            }
++        } catch (Throwable t) {
++            plugin.error = describe(t);
++            return null;
 +        } finally {
 +            Context.exit();
 +        }
@@ -1287,7 +1955,7 @@ index 6c37252..1ff451f 100644
      public static int PRESET_LOW = (
          FLAG_ANIMATED_EMOJI_CHAT_PREMIUM |
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java b/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java
-index 245a5ab..75d694c 100644
+index 245a5ab..b0771a3 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java
 @@ -78,6 +78,10 @@ public class LocaleController {
@@ -1315,6 +1983,24 @@ index 245a5ab..75d694c 100644
          StringBuilder K = new StringBuilder();
          int lastDec = 0;
          int KCount = 0;
+@@ -2921,6 +2932,17 @@ public class LocaleController {
+     }
+ 
+     public static String formatUserStatus(int currentAccount, TLRPC.User user, boolean[] isOnline, boolean[] madeShorter) {
++        String status = formatUserStatusInternal(currentAccount, user, isOnline, madeShorter);
++        if (user == null) {
++            return status;
++        }
++        // Плагин может заменить текст статуса (например, «онлайн» на
++        // «последний раз в сети»). isOnline[] не трогаем: цвет и точки
++        // остаются такими, как решил Telegram.
++        return ForkHooks.statusText(user.id, status);
++    }
++
++    private static String formatUserStatusInternal(int currentAccount, TLRPC.User user, boolean[] isOnline, boolean[] madeShorter) {
+         if (user != null && user.status != null && user.status.expires == 0) {
+             if (user.status instanceof TLRPC.TL_userStatusRecently) {
+                 user.status.expires = user.status.by_me ? -1000 : -100;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 index 7a0b35b..f4ac48f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
@@ -1383,6 +2069,22 @@ index 7a0b35b..f4ac48f 100644
          if (task.replyId != 0 && task.monoForumPeerId == 0) {
              TLRPC.TL_messages_readDiscussion req = new TLRPC.TL_messages_readDiscussion();
              req.msg_id = (int) task.replyId;
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java b/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
+index d6901d2..3b5955f 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java
+@@ -1365,6 +1365,11 @@ public class NotificationsController extends BaseController implements Notificat
+     }
+ 
+     private void appendMessage(MessageObject messageObject) {
++        // Фильтр уведомлений плагина. Само сообщение в чат приходит как обычно,
++        // молчит только пуш-уведомление.
++        if (!ForkHooks.shouldNotifyForMessage(messageObject.getDialogId(), messageObject.getSenderId(), messageObject.message == null ? null : messageObject.message.text)) {
++            return;
++        }
+         for (int i = 0; i < pushMessages.size(); i++) {
+             if (
+                 pushMessages.get(i).getId() == messageObject.getId() &&
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
 index 39f493f..33534fb 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
@@ -1465,6 +2167,30 @@ index ee6b470..1c9911c 100644
  //        if (hasSections() && getItemAnimator() != null) {
  //            getItemAnimator().listenToAnimationUpdates(this::invalidate);
  //        }
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+index 095448f..2440c6a 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+@@ -109,6 +109,7 @@ import org.telegram.messenger.DialogObject;
+ import org.telegram.messenger.Emoji;
+ import org.telegram.messenger.FileLoader;
+ import org.telegram.messenger.FileLog;
++import org.telegram.messenger.ForkHooks;
+ import org.telegram.messenger.FilesMigrationService;
+ import org.telegram.messenger.ImageLoader;
+ import org.telegram.messenger.ImageLocation;
+@@ -10992,7 +10993,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+         }
+         MessagesController messagesController = AccountInstance.getInstance(currentAccount).getMessagesController();
+         if (dialogsType == DIALOGS_TYPE_DEFAULT) {
+-            return messagesController.getDialogs(folderId);
++            // Фильтр плагинов применяется только к списку диалогов.
++            // Списки для выбора участников и ботов не трогаем: там скрытие
++            // диалога сломало бы выборку.
++            return ForkHooks.filterDialogs(messagesController.getDialogs(folderId));
+         } else if (dialogsType == DIALOGS_TYPE_WIDGET || dialogsType == DIALOGS_TYPE_IMPORT_HISTORY) {
+             return messagesController.dialogsServerOnly;
+         } else if (dialogsType == DIALOGS_TYPE_ADD_USERS_TO) {
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkAnimationActivity.java
 new file mode 100644
 index 0000000..7bd0152
