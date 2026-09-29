@@ -1316,10 +1316,23 @@ index 245a5ab..75d694c 100644
          int lastDec = 0;
          int KCount = 0;
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
-index 7a0b35b..c9f774e 100644
+index 7a0b35b..f4ac48f 100644
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
-@@ -11386,6 +11386,10 @@ public class MessagesController extends BaseController implements NotificationCe
+@@ -10524,7 +10524,11 @@ public class MessagesController extends BaseController implements NotificationCe
+         checkReadTasks();
+ 
+         if (getUserConfig().isClientActivated()) {
+-            if (!ignoreSetOnline && getConnectionsManager().getPauseTime() == 0 && ApplicationLoader.isScreenOn && !ApplicationLoader.mainInterfacePausedStageQueue) {
++            // Режим призрака: вместо updateStatus(offline=false), который
++            // повторяется каждые ~55 секунд и держит статус «онлайн»,
++            // уходим в ветку offline=true ниже — сервер покажет
++            // «последний раз был в сети» и перестанет считать нас онлайн.
++            if (!ignoreSetOnline && !ForkGhost.suppressActivity() && getConnectionsManager().getPauseTime() == 0 && ApplicationLoader.isScreenOn && !ApplicationLoader.mainInterfacePausedStageQueue) {
+                 if (ApplicationLoader.mainInterfacePausedStageQueueTime != 0 && Math.abs(ApplicationLoader.mainInterfacePausedStageQueueTime - System.currentTimeMillis()) > 1000) {
+                     if (statusSettingState != 1 && (lastStatusUpdateTime == 0 || Math.abs(System.currentTimeMillis() - lastStatusUpdateTime) >= 55000 || offlineSent)) {
+                         statusSettingState = 1;
+@@ -11386,6 +11390,10 @@ public class MessagesController extends BaseController implements NotificationCe
          if (action < 0 || action >= sendingTypings.length || dialogId == 0) {
              return false;
          }
@@ -1330,7 +1343,7 @@ index 7a0b35b..c9f774e 100644
          final long selfId = UserConfig.getInstance(UserConfig.selectedAccount).getClientUserId();
          if (dialogId == selfId) {
              return false;
-@@ -11524,7 +11528,13 @@ public class MessagesController extends BaseController implements NotificationCe
+@@ -11524,7 +11532,13 @@ public class MessagesController extends BaseController implements NotificationCe
          if (BuildVars.LOGS_ENABLED && loaderLogger == null && mode == 0) {
              loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
          }
@@ -1345,7 +1358,7 @@ index 7a0b35b..c9f774e 100644
              getMessagesStorage().getMessages(dialogId, mergeDialogId, loadInfo, count, max_id, offset_date, minDate, classGuid, load_type, mode, threadMessageId, loadIndex, processMessages, isTopic, loaderLogger);
          } else {
              final TLRPC.Chat chat = dialogId < 0 ? getChat(-dialogId): null;
-@@ -14397,6 +14407,10 @@ public class MessagesController extends BaseController implements NotificationCe
+@@ -14397,6 +14411,10 @@ public class MessagesController extends BaseController implements NotificationCe
          if (messageObject.scheduled) {
              return;
          }
@@ -1356,7 +1369,7 @@ index 7a0b35b..c9f774e 100644
          ArrayList<Integer> arrayList = new ArrayList<>();
          if (messageObject.messageOwner.mentioned) {
              getMessagesStorage().markMentionMessageAsRead(-messageObject.messageOwner.peer_id.channel_id, messageObject.getId(), messageObject.getDialogId());
-@@ -14557,6 +14571,13 @@ public class MessagesController extends BaseController implements NotificationCe
+@@ -14557,6 +14575,13 @@ public class MessagesController extends BaseController implements NotificationCe
      }
  
      private void completeReadTask(ReadTask task) {
