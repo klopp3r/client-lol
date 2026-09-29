@@ -402,18 +402,21 @@ jobs:
 
           # Плагины едут в res/raw. R8 сырые ресурсы не вырезает, в отличие
           # от строковых литералов, — и содержимое видно прямо в APK.
-          RAW=$(unzip -l "$APK" | awk '{print $4}' | grep -c '^res/raw/')
-          echo "  записей res/raw в APK: $RAW"
+          # AAPT2 сокращает пути ресурсов в release: res/raw/peek_online.js
+          # приезжает как res/3Tw.js. Поэтому смотрим содержимое всех res/*,
+          # а не каталог с исходным именем.
+          RAW=$(unzip -l "$APK" | awk '{print $4}' | grep -c '\.js$')
+          echo "  .js записей в APK: $RAW"
           FAILED=0
           for want in '"id":"peek_online"' '"id":"streams"' '"id":"word_filters"' '@fork-plugin'; do
-            if unzip -p "$APK" 'res/raw/*' 2>/dev/null | grep -qa -- "$want"; then
+            if unzip -p "$APK" 'res/*' 2>/dev/null | grep -qa -- "$want"; then
               echo "  нашлось в res/raw: $want"
             else
-              echo "::error::в res/raw APK нет «$want»: встроенные плагины не попали в сборку"
+              echo "::error::в APK нет «$want»: встроенные плагины не попали в сборку"
               FAILED=1
             fi
           done
-          test "$RAW" -ge 3 || { echo "::error::ожидалось не меньше 3 файлов res/raw, найдено $RAW"; FAILED=1; }
+          test "$RAW" -ge 3 || { echo "::error::ожидалось не меньше 3 файлов .js, найдено $RAW"; FAILED=1; }
           test "$FAILED" = 0 || exit 1
       - name: Publish APK to release
         env:
