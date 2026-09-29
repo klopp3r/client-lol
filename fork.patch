@@ -1244,10 +1244,10 @@ index 0000000..a79d875
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
 new file mode 100644
-index 0000000..0dc08ec
+index 0000000..34f1673
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPluginManager.java
-@@ -0,0 +1,598 @@
+@@ -0,0 +1,649 @@
 +package org.telegram.messenger;
 +
 +import android.content.SharedPreferences;
@@ -1606,6 +1606,54 @@ index 0000000..0dc08ec
 +        return TextUtils.isEmpty(result) ? "plugin" : result;
 +    }
 +
++    /** Читает весь исходник плагина в UTF-8. */
++    private static String readSource(File file) {
++        try {
++            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
++            InputStream in = new FileInputStream(file);
++            try {
++                byte[] buffer = new byte[8192];
++                int read;
++                while ((read = in.read(buffer)) > 0) {
++                    out.write(buffer, 0, read);
++                }
++            } finally {
++                in.close();
++            }
++            return out.toString("UTF-8");
++        } catch (Throwable ignore) {
++            return null;
++        }
++    }
++
++    /**
++     * Отрезает шапку с манифестом: от тега @fork-plugin до конца JSON-объекта.
++     * Если тега нет, возвращает исходник целиком.
++     */
++    static String stripManifest(String source) {
++        int tag = source.indexOf(TAG);
++        if (tag < 0) {
++            return source;
++        }
++        int start = source.indexOf('{', tag);
++        if (start < 0) {
++            return source;
++        }
++        int depth = 0;
++        for (int i = start; i < source.length(); i++) {
++            char c = source.charAt(i);
++            if (c == '{') {
++                depth++;
++            } else if (c == '}') {
++                depth--;
++                if (depth == 0) {
++                    return source.substring(i + 1);
++                }
++            }
++        }
++        return source;
++    }
++
 +    private static String readHead(File file) throws Exception {
 +        InputStream in = new FileInputStream(file);
 +        try {
@@ -1761,12 +1809,15 @@ index 0000000..0dc08ec
 +            Scriptable scope = cx.initStandardObjects();
 +            plugin.scope = scope;
 +            putApi(cx, scope, plugin);
-+            InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8");
-+            try {
-+                cx.evaluateReader(scope, reader, plugin.fileName, 1, null);
-+            } finally {
-+                reader.close();
++            String source = readSource(file);
++            if (source == null) {
++                plugin.error = "не удалось прочитать исходник";
++                return;
 +            }
++            // Манифест — не JavaScript. Строка @fork-plugin и объект с полями
++            // не парсятся движком, поэтому отрезаем шапку и выполняем только
++            // тело. Файлы без манифеста выполняются как есть.
++            cx.evaluateString(scope, stripManifest(source), plugin.fileName, 1, null);
 +        } catch (Throwable t) {
 +            plugin.error = describe(t);
 +        } finally {
