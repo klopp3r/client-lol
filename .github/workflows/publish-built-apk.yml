@@ -49,16 +49,11 @@ jobs:
           # jq здесь не годится: одинарные кавычки вокруг имени воркфлоу
           # съедали внешние кавычки, и gh ронял шаг. Разбор на python,
           # и выражение проверено заранее на живом API.
-          RID=$(gh api "repos/$REPO/actions/runs?per_page=100" | python3 -c "
-import json, sys
-runs = json.load(sys.stdin)['workflow_runs']
-print(next((r['id'] for r in runs
-            if r['run_number'] == int('$RUN') and r['name'] == 'build-telegram-fork'), ''))")
+          RID=$(gh api "repos/$REPO/actions/runs?per_page=100" \
+            | python3 -c 'import json,sys; rs=json.load(sys.stdin)["workflow_runs"]; print(next((r["id"] for r in rs if r["run_number"]==int("'"$RUN"'") and r["name"]=="build-telegram-fork"), ""))')
           test -n "$RID" || { echo "::error::прогон $RUN не найден"; exit 1; }
-          AID=$(gh api "repos/$REPO/actions/runs/$RID/artifacts" | python3 -c "
-import json, sys
-a = json.load(sys.stdin).get('artifacts', [])
-print(a[0]['id'] if a else '')")
+          AID=$(gh api "repos/$REPO/actions/runs/$RID/artifacts" \
+            | python3 -c 'import json,sys; a=json.load(sys.stdin).get("artifacts") or []; print(a[0]["id"] if a else "")')
           test -n "$AID" || { echo "::error::у прогона $RUN (id $RID) нет артефактов"; exit 1; }
           echo "  прогон $RUN, id $RID, артефакт $AID" | tee -a "$GITHUB_STEP_SUMMARY"
           gh api "repos/$REPO/actions/artifacts/$AID/zip" > /tmp/art.zip
