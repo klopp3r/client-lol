@@ -18,6 +18,7 @@ on:
       - main
     paths:
       - PROMOTE_RUN
+      - .github/workflows/publish-built-apk.yml
 
 permissions:
   contents: write
