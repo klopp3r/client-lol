@@ -308,7 +308,8 @@ jobs:
                      org.telegram.ui.ForkPluginInstallActivity \
                      org.telegram.messenger.ForkGhost org.telegram.ui.ForkGhostActivity \
                      org.telegram.messenger.ForkTuning org.telegram.ui.ForkMainSettingsActivity \
-                     org.telegram.ui.ForkAnimationActivity; do
+                     org.telegram.ui.ForkAnimationActivity \
+                     org.telegram.messenger.ForkHooks org.telegram.messenger.ForkBundled; do
             # В mapping у сохранённого класса строка заканчивается двоеточием.
             if ! grep -q "^$cls -> $cls:" "$MAPPING"; then
               echo "::error::$cls обфусцирован или вырезан R8 — нужны keep-правила"
@@ -382,7 +383,7 @@ jobs:
           echo "::notice title=Ресурсы в порядке::Все строки форка и контрольные строки на месте ($SIZE байт)"
 
           for want in peek_online streams word_filters '@fork-plugin'; do
-            if unzip -p "$APK" classes.dex classes2.dex classes3.dex classes4.dex 2>/dev/null | grep -qa "$want"; then
+            if unzip -p "$APK" 'classes*.dex' 2>/dev/null | grep -qa "$want"; then
               echo "  нашлось: $want"
             else
               echo "::error::в APK нет «$want»: встроенные плагины не попали в сборку"
