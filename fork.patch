@@ -67,10 +67,23 @@ index 6801688..b455ba9 100644
 +-keep class org.telegram.ui.ForkMainSettingsActivity { *; }
 +-keep class org.telegram.ui.ForkAnimationActivity { *; }
 diff --git a/TMessagesProj/src/main/AndroidManifest.xml b/TMessagesProj/src/main/AndroidManifest.xml
-index 6f6d377..cdc3d53 100644
+index 6f6d377..83c3518 100644
 --- a/TMessagesProj/src/main/AndroidManifest.xml
 +++ b/TMessagesProj/src/main/AndroidManifest.xml
-@@ -691,6 +691,47 @@
+@@ -465,6 +465,12 @@
+             android:permission="android.permission.BIND_JOB_SERVICE"
+             android:foregroundServiceType="dataSync"
+         />
++        <service
++            android:name=".ForkPresenceService"
++            android:enabled="true"
++            android:exported="false"
++            android:foregroundServiceType="dataSync"
++        />
+         <service
+             android:name=".BringAppForegroundService"
+             android:enabled="true"
+@@ -691,6 +697,47 @@
              android:value="5" />
          -->
  
@@ -306,10 +319,10 @@ index 0000000..c5d8c90
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java
 new file mode 100644
-index 0000000..52d349f
+index 0000000..e7543da
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkGhost.java
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,280 @@
 +package org.telegram.messenger;
 +
 +import android.app.Activity;
@@ -460,11 +473,16 @@ index 0000000..52d349f
 +
 +    public static void setAlwaysOnline(boolean value) {
 +        write(KEY_ALWAYS_ONLINE, value);
++        if (value) {
++            ForkPresenceService.start();
++        } else {
++            ForkPresenceService.stop();
++        }
 +        if (!value) {
 +            // Выключили, пока приложение в фоне: нативный код уже отправил
 +            // offline и ждать следующего цикла нельзя, иначе собеседник
 +            // будет видеть «в сети» ещё до часа. Отправляем сразу.
-+            sendPresence(true);
++            sendPresenceOnce(true);
 +        }
 +    }
 +
@@ -501,7 +519,7 @@ index 0000000..52d349f
 +     * отправляет каждые ~55 секунд, только здесь его шлём мы — нативный код
 +     * о фоне знает и уходит в оффлайн сам.
 +     */
-+    private static void sendPresence(boolean offline) {
++    static void sendPresenceOnce(boolean offline) {
 +        try {
 +            TL_account.updateStatus request = new TL_account.updateStatus();
 +            request.offline = offline;
@@ -525,8 +543,11 @@ index 0000000..52d349f
 +    private static final Runnable presenceRunnable = new Runnable() {
 +        @Override
 +        public void run() {
-+            if (alwaysOnline() && backgrounded && !ApplicationLoader.isScreenOn) {
-+                sendPresence(false);
++            // Когда сервис жив, присутствие шлёт он — иначе два отправителя
++            // раз в 50 секунд. Сервис нужен именно затем, чтобы процесс не
++            // убили, а таймер остаётся запасным вариантом без него.
++            if (alwaysOnline() && backgrounded && !ApplicationLoader.isScreenOn && !ForkPresenceService.isRunning()) {
++                sendPresenceOnce(false);
 +            }
 +            AndroidUtilities.runOnUIThread(this, PRESENCE_INTERVAL_MS);
 +        }
@@ -542,6 +563,12 @@ index 0000000..52d349f
 +            public void onActivityStarted(Activity activity) {
 +                startedActivities.incrementAndGet();
 +                backgrounded = false;
++                // Из фона Android 12+ сервис запустить не даёт, а после
++                // перезагрузки телефона он не поднимется сам. Пользователь
++                // открыл приложение — можно.
++                if (alwaysOnline() && !ForkPresenceService.isRunning()) {
++                    ForkPresenceService.start();
++                }
 +            }
 +
 +            @Override
@@ -1811,6 +1838,133 @@ index 0000000..d63cc12
 +        }
 +        return name + ": " + message;
 +    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkPresenceService.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPresenceService.java
+new file mode 100644
+index 0000000..cc84011
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ForkPresenceService.java
+@@ -0,0 +1,121 @@
++/*
++ * This is the source code of Telegram for Android v. 5.x.x.
++ * It is licensed under GNU GPL v. 2 or later.
++ * You should have received a copy of the license in this archive (see LICENSE).
++ *
++ * Copyright Nikolai Kudashov, 2013-2018.
++ */
++
++package org.telegram.messenger;
++
++import android.app.Notification;
++import android.app.Service;
++import android.content.Intent;
++import android.os.Build;
++import android.os.IBinder;
++
++import androidx.annotation.Nullable;
++
++/**
++ * Держит процесс живым, пока включён «всегда онлайн», и повторяет
++ * updateStatus(offline=false) каждые ~50 секунд.
++ *
++ * Зачем сервис: официальный клиент отправляет присутствие, только пока
++ * приложение на экране, и сворачивание означает настоящий оффлайн. Без
++ * сервиса Android рано или поздно убивает свёрнутый процесс, и статус
++ * уезжает в оффлайн сам — никакая настройка это не отменит. Сервис с
++ * постоянным уведомлением удерживает процесс, а updateStatus шлёт тот же
++ * метод, что и официальный клиент.
++ */
++public class ForkPresenceService extends Service {
++    private static final int NOTIFICATION_ID = 9174;
++    private static final long INTERVAL_MS = 50_000L;
++
++    private static volatile boolean running;
++
++    public static boolean isRunning() {
++        return running;
++    }
++
++    public static void start() {
++        if (running) {
++            return;
++        }
++        try {
++            Intent intent = new Intent(ApplicationLoader.applicationContext, ForkPresenceService.class);
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                ApplicationLoader.applicationContext.startForegroundService(intent);
++            } else {
++                ApplicationLoader.applicationContext.startService(intent);
++            }
++        } catch (Throwable ignored) {
++            // На Android 12+ запуск из фона запрещён. Переключатель в
++            // приложении вызывается на переднем плане, а после перезагрузки
++            // сервис поднимется из onActivityStarted.
++        }
++    }
++
++    public static void stop() {
++        try {
++            ApplicationLoader.applicationContext.stopService(
++                    new Intent(ApplicationLoader.applicationContext, ForkPresenceService.class));
++        } catch (Throwable ignored) {
++        }
++    }
++
++    @Nullable
++    @Override
++    public IBinder onBind(Intent intent) {
++        return null;
++    }
++
++    @Override
++    public void onCreate() {
++        super.onCreate();
++        running = true;
++    }
++
++    @Override
++    public void onDestroy() {
++        running = false;
++        AndroidUtilities.cancelRunOnUIThread(presenceRunnable);
++        super.onDestroy();
++    }
++
++    @Override
++    public int onStartCommand(Intent intent, int flags, int startId) {
++        NotificationsController.checkOtherNotificationsChannel();
++        Notification notification = new Notification.Builder(this, NotificationsController.OTHER_NOTIFICATIONS_CHANNEL)
++                .setContentTitle(LocaleController.getString(R.string.ForkPresenceTitle))
++                .setContentText(LocaleController.getString(R.string.ForkPresenceText))
++                .setAutoCancel(false)
++                .setOngoing(true)
++                .setSmallIcon(R.drawable.notification)
++                .build();
++        // На Android 12+ startForeground обязан вызваться в течение пяти
++        // секунд после startForegroundService, поэтому онForeground здесь же.
++        // Порядок важен и для второго случая: сервис, который завершится, не
++        // вызвав startForeground, приводит к ForegroundServiceDidNotStartInTime.
++        startForeground(NOTIFICATION_ID, notification);
++
++        if (!ForkGhost.alwaysOnline()) {
++            running = false;
++            stopSelf();
++            return START_NOT_STICKY;
++        }
++
++        AndroidUtilities.cancelRunOnUIThread(presenceRunnable);
++        AndroidUtilities.runOnUIThread(presenceRunnable, INTERVAL_MS);
++        return START_STICKY;
++    }
++
++    private static final Runnable presenceRunnable = new Runnable() {
++        @Override
++        public void run() {
++            if (ForkGhost.alwaysOnline()) {
++                ForkGhost.sendPresenceOnce();
++            }
++            AndroidUtilities.runOnUIThread(this, INTERVAL_MS);
++        }
++    };
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java b/TMessagesProj/src/main/java/org/telegram/messenger/ForkTuning.java
 new file mode 100644
@@ -4092,7 +4246,7 @@ index d468344..27234a3 100644
      <string name="LanguageName">Українська</string>
      <string name="English">Англійська</string>
 diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
-index 1013bb6..8e35804 100644
+index 1013bb6..711adac 100644
 --- a/TMessagesProj/src/main/res/values/strings.xml
 +++ b/TMessagesProj/src/main/res/values/strings.xml
 @@ -1,6 +1,6 @@
@@ -4112,7 +4266,7 @@ index 1013bb6..8e35804 100644
      <string name="LiteOptionsAutoplayGifs">Autoplay GIFs</string>
      <string name="LiteOptionsParticles">Particles</string>
      <string name="LiteSmoothTransitions">Enable Smooth Transitions</string>
-@@ -11235,4 +11236,54 @@
+@@ -11235,4 +11236,56 @@
      <string name="RoundVideoComposition">Composition</string>
      <string name="RoundVideoCompositionEnabled">Round video styling</string>
      <string name="RoundVideoCompositionInfo">Disable styling to record a plain square without outside-circle blur, dimming or Telegram overlays.</string>
@@ -4144,6 +4298,8 @@ index 1013bb6..8e35804 100644
 +    <string name="ForkGhostTyping">Don\'t send typing</string>
 +    <string name="ForkGhostAutoOffline">Automatic offline</string>
 +    <string name="ForkGhostAlwaysOnline">Always online</string>
++    <string name="ForkPresenceTitle">Always online is on</string>
++    <string name="ForkPresenceText">This notification keeps the app alive so your status stays online. Turn the setting off to hide it.</string>
 +    <string name="ForkGhostKeepOnline">Stay online after closing</string>
 +    <string name="ForkGhostInfo">Ghost mode hides your activity. Messages stay unread and no read receipts are sent, history is not downloaded, typing is not shown, and the app stops talking to the server while it is in the background. Always online keeps the status online while the process lives; staying online after closing holds it for 15 minutes after you leave the app. Use it only for your own account.</string>
 +    <string name="ForkGhostOff">Ghost mode is off. Turn it on to hide your activity.</string>
