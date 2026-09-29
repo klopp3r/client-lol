@@ -31,7 +31,9 @@ jobs:
       - name: Прочитать номер прогона
         id: which
         run: |
-          RUN=$(tr -d '[:space:]' < PROMOTE_RUN)
+          # Берём последнюю строку из чистых цифр: в файле может быть
+          # комментарий, а не только номер.
+          RUN=$(grep -E '^[0-9]+$' PROMOTE_RUN | tail -1)
           echo "публикуем артефакт прогона $RUN" >> "$GITHUB_STEP_SUMMARY"
           echo "run=$RUN" >> "$GITHUB_OUTPUT"
 
