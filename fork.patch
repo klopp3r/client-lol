@@ -2745,10 +2745,10 @@ index 0000000..7bd0152
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
 new file mode 100644
-index 0000000..00c1f64
+index 0000000..59a7761
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkGhostActivity.java
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,264 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -2836,9 +2836,15 @@ index 0000000..00c1f64
 +    private void refresh() {
 +        enabled = ForkGhost.isEnabled();
 +        if (adapter != null) {
-+            // notifyItemRangeChanged запускает анимацию изменения строк,
-+            // а notifyDataSetChanged перерисовывает всё без перехода.
-+            adapter.notifyItemRangeChanged(0, adapter.getItemCount());
++            // Слушатель переключателя срабатывает во время раздачи
++            // события списку: notify в этот момент роняет приложение.
++            // Поэтому откладываем и просим список не считать раскладку.
++            final RecyclerListView view = listView;
++            AndroidUtilities.runOnUIThread(() -> {
++                if (adapter != null && (view == null || !view.isComputingLayout())) {
++                    adapter.notifyItemRangeChanged(0, adapter.getItemCount());
++                }
++            });
 +        }
 +    }
 +
@@ -3009,10 +3015,10 @@ index 0000000..00c1f64
 +}
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java
 new file mode 100644
-index 0000000..4d7c60c
+index 0000000..f38cfb2
 --- /dev/null
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ForkMainSettingsActivity.java
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,244 @@
 +package org.telegram.ui;
 +
 +import android.content.Context;
@@ -3092,7 +3098,7 @@ index 0000000..4d7c60c
 +    public void onResume() {
 +        super.onResume();
 +        if (adapter != null) {
-+            adapter.notifyDataSetChanged();
++            refreshAllRows();
 +        }
 +    }
 +
@@ -3112,9 +3118,39 @@ index 0000000..4d7c60c
 +            case ROW_SECONDS: ForkTuning.setShowSeconds(value); break;
 +            case ROW_VIBRATION: ForkTuning.setVibration(value); break;
 +        }
-+        if (adapter != null) {
-+            adapter.notifyDataSetChanged();
-+        }
++        refreshRow(row);
++    }
++
++    /**
++     * Перерисовать одну строку, а не весь список, и не из обработчика
++     * касания. Слушатель переключателя срабатывает во время раздачи
++     * события списку, и notifyDataSetChanged() в этот момент роняет
++     * приложение на IllegalStateException: Cannot call this method while
++     * RecyclerView is computing a layout or scrolling.
++     */
++    private void refreshAllRows() {
++        AndroidUtilities.runOnUIThread(() -> {
++            if (adapter != null && (listView == null || !listView.isComputingLayout())) {
++                adapter.notifyItemRangeChanged(0, adapter.getItemCount());
++            }
++        });
++    }
++
++    private void refreshRow(final int row) {
++        AndroidUtilities.runOnUIThread(() -> {
++            if (adapter == null || listView == null) {
++                return;
++            }
++            if (listView.isComputingLayout()) {
++                AndroidUtilities.runOnUIThread(() -> {
++                    if (adapter != null) {
++                        adapter.notifyItemChanged(row);
++                    }
++                }, 100);
++                return;
++            }
++            adapter.notifyItemChanged(row);
++        });
 +    }
 +
 +    private CharSequence title(int row) {
